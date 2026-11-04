@@ -1,0 +1,161 @@
+app/src/main/java/com/sednium/kryptonide/ui/plugins/PluginsPanel.kt:223:                            Icon(Icons.Default.Star, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(10.dp))
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:131:            TemplateItem("Android (Kotlin)", ProjectTemplate.ANDROID_KOTLIN, "Modern Android app with Kotlin", Color(0xFF22C55E), R.drawable.ic_kotlin),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:132:            TemplateItem("Android (Java)", ProjectTemplate.ANDROID_JAVA, "Classic Android development", Color(0xFFF59E0B), R.drawable.ic_java),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:133:            TemplateItem("Android (Jetpack Compose)", ProjectTemplate.ANDROID_COMPOSE, "Declarative UI toolkit", Color(0xFF10B981), R.drawable.ic_compose)
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:139:            TemplateItem("HTML/CSS/JS", ProjectTemplate.HTML, "Vanilla web stack", Color(0xFFF97316), R.drawable.ic_html),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:140:            TemplateItem("React", ProjectTemplate.REACT, "React SPA", Color(0xFF3B82F6), R.drawable.ic_react),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:141:            TemplateItem("React + Vite", ProjectTemplate.VITE, "Lightning fast React build", Color(0xFFA855F7), R.drawable.ic_vite),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:142:            TemplateItem("Next.js", ProjectTemplate.NEXTJS, "React framework for production", Color(0xFFE6EDF3), R.drawable.ic_nextjs),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:143:            TemplateItem("PHP", ProjectTemplate.PHP, "Server-side scripting", Color(0xFF6366F1), R.drawable.ic_php)
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:149:            TemplateItem("Node + Express", ProjectTemplate.NODE, "Backend JS server", Color(0xFF22C55E), R.drawable.ic_node),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:150:            TemplateItem("FastAPI", ProjectTemplate.FASTAPI, "High performance Python API", Color(0xFF14B8A6), R.drawable.ic_fastapi),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:151:            TemplateItem("Python", ProjectTemplate.PYTHON, "General purpose Python", Color(0xFFEAB308), R.drawable.ic_python),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:152:            TemplateItem("C++", ProjectTemplate.CPP, "High performance systems", Color(0xFF3B82F6), R.drawable.ic_cpp),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:153:            TemplateItem("C", ProjectTemplate.C, "Low-level system programming", Color(0xFF60A5FA), R.drawable.ic_c),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:154:            TemplateItem("C#", ProjectTemplate.CSHARP, "Modern .NET application", Color(0xFF8B5CF6), R.drawable.ic_csharp),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:155:            TemplateItem("Rust", ProjectTemplate.RUST, "Safe systems programming", Color(0xFFF97316), R.drawable.ic_rust)
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:161:            TemplateItem("Markdown", ProjectTemplate.MARKDOWN, "Documentation and notes", Color(0xFF3B82F6), R.drawable.ic_markdown),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:162:            TemplateItem("JSON", ProjectTemplate.JSON, "Data configuration", Color(0xFF8B949E), R.drawable.ic_json),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:163:            TemplateItem("Blank Project", ProjectTemplate.BLANK, "Start from scratch", Color(0xFF9CA3AF), R.drawable.ic_blank)
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:305:                        colors = CardDefaults.cardColors(containerColor = Color(0xFF3B82F6).copy(alpha = 0.1f)),
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:306:                        border = BorderStroke(1.dp, Color(0xFF3B82F6).copy(alpha = 0.5f))
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:332:                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:536:                                            text = { Text("Sign Out", color = Color(0xFFF87171)) }, 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:538:                                                Icon(Icons.Default.Logout, null, tint = Color(0xFFF87171)) 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:564:                    val gradient = Brush.linearGradient(listOf(Color(0xFF818CF8), Color(0xFFA78BFA), Color(0xFF60A5FA)))
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:605:                                color = Color(0xFF60A5FA), 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:612:                                color = Color(0xFF34D399), 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:619:                                color = Color(0xFF818CF8), 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:827:                        Text("https://github.com/user/repo", color = Color(0xFF484F58)) 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:920:                        tint = Color(0xFFF87171), 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:937:                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:1081:                    tint = Color(0xFF484F58), 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:1098:                    tint = Color(0xFF818CF8), 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:1187:                        color = Color(0xFF818CF8), 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:1219:                    valueColor = Color(0xFF818CF8)
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:1448:                    tint = Color(0xFF818CF8), 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:1469:                    placeholder = { Text("my-awesome-project", color = Color(0xFF484F58)) }, 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:1611:                    color = if (isSelected) Color(0xFF818CF8) else TextMuted, 
+app/src/main/java/com/sednium/kryptonide/ui/projects/ProjectsDashboard.kt:1695:                        .background(Color(0xFF1E2430)),
+app/src/main/java/com/sednium/kryptonide/ui/editor/FileExplorerPanel.kt:166:                            Icon(Icons.Default.Folder, null, tint = Color(0xFF79C0FF), modifier = Modifier.size(16.dp))
+app/src/main/java/com/sednium/kryptonide/ui/editor/FileExplorerPanel.kt:231:                    ContextMenuItem(Icons.Default.Delete, "Delete", tint = Color(0xFFF87171)) { 
+app/src/main/java/com/sednium/kryptonide/ui/editor/FileExplorerPanel.kt:306:        "kt", "kts", "java" -> Icons.Default.Code to Color(0xFFA78BFA)
+app/src/main/java/com/sednium/kryptonide/ui/editor/FileExplorerPanel.kt:307:        "xml", "html", "htm" -> Icons.Default.Code to Color(0xFFF97316)
+app/src/main/java/com/sednium/kryptonide/ui/editor/FileExplorerPanel.kt:308:        "css", "scss" -> Icons.Default.Code to Color(0xFF38BDF8)
+app/src/main/java/com/sednium/kryptonide/ui/editor/FileExplorerPanel.kt:309:        "js", "jsx", "ts", "tsx" -> Icons.Default.Code to Color(0xFFFDE047)
+app/src/main/java/com/sednium/kryptonide/ui/editor/FileExplorerPanel.kt:310:        "json" -> Icons.Default.Code to Color(0xFFEAB308)
+app/src/main/java/com/sednium/kryptonide/ui/editor/FileExplorerPanel.kt:311:        "md", "txt" -> Icons.Default.Description to Color(0xFF60A5FA)
+app/src/main/java/com/sednium/kryptonide/ui/editor/FileExplorerPanel.kt:312:        "py", "rs", "c", "cpp", "cs", "sh" -> Icons.Default.Terminal to Color(0xFF34D399)
+app/src/main/java/com/sednium/kryptonide/ui/editor/FileExplorerPanel.kt:313:        "png", "jpg", "jpeg", "gif", "svg" -> Icons.Default.Image to Color(0xFF34D399)
+app/src/main/java/com/sednium/kryptonide/ui/editor/FileExplorerPanel.kt:314:        "gradle", "properties", "gitignore" -> Icons.Default.Settings to Color(0xFF9CA3AF)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:304:    PaletteCategory.EDIT      -> Color(0xFF1C2128)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:305:    PaletteCategory.SELECTION -> Color(0xFF1A2035)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:306:    PaletteCategory.VIEW      -> Color(0xFF1A1F2E)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:307:    PaletteCategory.GO        -> Color(0xFF1A2820)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:308:    PaletteCategory.LARRY     -> Color(0xFF1E1A2E)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:309:    PaletteCategory.FILE      -> Color(0xFF1F1A14)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:310:    PaletteCategory.GIT       -> Color(0xFF1F1416)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:311:    PaletteCategory.RUN       -> Color(0xFF142018)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:315:    PaletteCategory.EDIT      -> Color(0xFF60A5FA)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:316:    PaletteCategory.SELECTION -> Color(0xFF818CF8)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:317:    PaletteCategory.VIEW      -> Color(0xFF7DD3FC)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:318:    PaletteCategory.GO        -> Color(0xFF34D399)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:319:    PaletteCategory.LARRY     -> Color(0xFFA78BFA)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:320:    PaletteCategory.FILE      -> Color(0xFFFBBF24)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:321:    PaletteCategory.GIT       -> Color(0xFFF87171)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorCommandPalette.kt:322:    PaletteCategory.RUN       -> Color(0xFF10B981)
+app/src/main/java/com/sednium/kryptonide/ui/editor/EditorScreen.kt:241:        RenderStatus.FAILED -> Color(0xFFF87171)
+app/src/main/java/com/sednium/kryptonide/ui/editor/CodeEditorView.kt:52:                    setHintTextColor(0xFF8B949E.toInt())
+app/src/main/java/com/sednium/kryptonide/ui/settings/FontPickerScreen.kt:127:                    Text("Delete", color = Color(0xFFF87171))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:44:    RenderLogLevel.INFO    -> Color(0xFFE6EDF3)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:45:    RenderLogLevel.WARN    -> Color(0xFFFBBF24)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:46:    RenderLogLevel.ERROR   -> Color(0xFFF87171)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:47:    RenderLogLevel.SUCCESS -> Color(0xFF4ADE80)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:48:    RenderLogLevel.CMD     -> Color(0xFF818CF8)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:49:    RenderLogLevel.SYSTEM  -> Color(0xFF60A5FA)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:60:    "WARNING" -> Color(0xFFFBBF24)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:61:    "ERROR"   -> Color(0xFFF87171)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:62:    "DEBUG"   -> Color(0xFF60A5FA)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:63:    else      -> Color(0xFFE6EDF3)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:105:                    .background(Color(0xFF0C0C0C))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:126:                RenderStatus.PREVIEW_READY, RenderStatus.SUCCESS  -> Color(0xFF22C55E)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:127:                RenderStatus.FAILED                               -> Color(0xFFF87171)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:128:                RenderStatus.RUNNING, RenderStatus.PREPARING      -> Color(0xFF818CF8)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:129:                else                                              -> Color(0xFF8B949E)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:175:                Icon(Icons.Default.Refresh, "Refresh", tint = Color(0xFF22C55E), modifier = Modifier.size(16.dp))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:185:                        if (showConsoleDrawer) Color(0xFF4F46E5)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:199:                            .background(Color(0xFFF87171)),
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:224:                    .background(Color(0xFF0F1117))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:230:                        .background(Color(0xFF161B22))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:239:                            .background(Color(0xFF30363D))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:256:                        Icon(Icons.Default.DeleteOutline, "Clear", tint = Color(0xFF8B949E), modifier = Modifier.size(15.dp))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:260:                        Icon(Icons.Default.KeyboardArrowDown, "Close", tint = Color(0xFF8B949E), modifier = Modifier.size(18.dp))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:264:                HorizontalDivider(color = Color(0xFF30363D), thickness = 0.5.dp)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:292:        if (isActive) Color(0xFF818CF8) else Color(0xFF8B949E),
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:307:                        .background(Color(0xFFF87171))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:315:            Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(Color(0xFF818CF8)).align(Alignment.BottomCenter))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:386:                            Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFF87171), modifier = Modifier.size(44.dp))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:388:                            Text("Preview failed", color = Color(0xFFF87171), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:390:                            Text("Tap ⊞ to see the error log.", color = Color(0xFF8B949E), fontSize = 12.sp)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:395:                            Icon(Icons.Default.PlayCircleOutline, null, tint = Color(0xFF8B949E), modifier = Modifier.size(52.dp))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:397:                            Text("Press Run to preview", color = Color(0xFF8B949E), fontSize = 13.sp)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:415:                Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF22C55E), modifier = Modifier.size(32.dp))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:417:                Text("No console errors", color = Color(0xFF8B949E), fontSize = 13.sp)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:421:        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().background(Color(0xFF0C0C0C)), contentPadding = PaddingValues(vertical = 4.dp)) {
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:425:                    "ERROR"   -> Color(0xFFF87171).copy(alpha = 0.07f)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:426:                    "WARNING" -> Color(0xFFFBBF24).copy(alpha = 0.06f)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:443:                            Text("${log.source}:${log.line}", color = Color(0xFF8B949E).copy(alpha = 0.6f), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:447:                HorizontalDivider(color = Color(0xFF30363D).copy(alpha = 0.4f), thickness = 0.3.dp)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:462:                modifier = Modifier.fillMaxWidth().background(Color(0xFFF87171).copy(alpha = 0.12f))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:463:                    .border(0.5.dp, Color(0xFFF87171).copy(alpha = 0.35f))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:467:                Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFF87171), modifier = Modifier.size(13.dp))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:469:                Text(errorSummary ?: "", color = Color(0xFFF87171), fontSize = 11.sp, modifier = Modifier.weight(1f))
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:476:                    RenderStatus.IDLE -> Text("Press ▶ Run to start.", color = Color(0xFF8B949E), fontSize = 13.sp)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:479:                            CircularProgressIndicator(color = Color(0xFF818CF8), modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:481:                            Text("Starting…", color = Color(0xFF8B949E), fontSize = 13.sp)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:484:                    else -> Text("No output.", color = Color(0xFF8B949E), fontSize = 13.sp)
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:488:            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().background(Color(0xFF0C0C0C)), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)) {
+app/src/main/java/com/sednium/kryptonide/ui/render/RenderPanel.kt:511:                        Text("▌", color = Color(0xFF818CF8).copy(alpha = al), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:17:    val Background  = Color(0xFF0D1117)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:18:    val Surface     = Color(0xFF161B22)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:19:    val SurfaceVar  = Color(0xFF1C2128)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:20:    val Border      = Color(0xFF30363D)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:21:    val OnBackground= Color(0xFFE6EDF3)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:22:    val OnSurface   = Color(0xFFE6EDF3)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:23:    val Primary     = Color(0xFF4F46E5)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:24:    val Secondary   = Color(0xFF818CF8)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:25:    val Muted       = Color(0xFF8B949E)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:26:    val Error       = Color(0xFFEF4444)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:27:    val Success     = Color(0xFF10B981)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:28:    val Warning     = Color(0xFFF59E0B)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:33:    val Background  = Color(0xFFF6F8FA)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:34:    val Surface     = Color(0xFFFFFFFF)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:35:    val SurfaceVar  = Color(0xFFEAEEF2)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:36:    val Border      = Color(0xFFD0D7DE)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:37:    val OnBackground= Color(0xFF24292F)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:38:    val OnSurface   = Color(0xFF24292F)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:39:    val Primary     = Color(0xFF4F46E5)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:40:    val Secondary   = Color(0xFF6366F1)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:41:    val Muted       = Color(0xFF57606A)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:42:    val Error       = Color(0xFFCF222E)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:43:    val Success     = Color(0xFF1A7F37)
+app/src/main/java/com/sednium/kryptonide/ui/theme/KryptonTheme.kt:44:    val Warning     = Color(0xFF9A6700)
+app/src/main/java/com/sednium/kryptonide/ui/git/GitPanel.kt:73:                tint     = if (colors.isDark) Color.White else Color(0xFF24292F)
+app/src/main/java/com/sednium/kryptonide/ui/git/GitPanel.kt:166:                .background(if (colors.isDark) Color(0xFF21262D) else Color(0xFFF0F2F5))
+app/src/main/java/com/sednium/kryptonide/ui/git/GitPanel.kt:170:            GitHubIcon(modifier = Modifier.size(40.dp), tint = if (colors.isDark) Color.White else Color(0xFF24292F))
+app/src/main/java/com/sednium/kryptonide/ui/git/GitPanel.kt:243:            colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF24292F), disabledContainerColor = colors.Border),
+app/src/main/java/com/sednium/kryptonide/ui/git/GitPanel.kt:332:                colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF24292F)),
+app/src/main/java/com/sednium/kryptonide/ui/git/GitPanel.kt:354:                    colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF24292F)),
+app/src/main/java/com/sednium/kryptonide/ui/git/GitPanel.kt:419:                Button(onClick = { if (repoName.isNotBlank()) { onCreateRepo(repoName.trim(), repoDesc.trim(), isPrivate); showCreateDialog = false } }, enabled = repoName.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF24292F))) {
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:315:private val TermBg      = Color(0xFF0C0C0C)
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:316:private val TermText    = Color(0xFFD4D4D4)
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:317:private val TermGreen   = Color(0xFF4EC9B0)
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:318:private val TermYellow  = Color(0xFFDCDCAA)
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:319:private val TermRed     = Color(0xFFF44747)
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:320:private val TermBlue    = Color(0xFF569CD6)
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:321:private val TermMuted   = Color(0xFF6A9955)
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:322:private val TermPrompt  = Color(0xFF4ADE80)
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:502:            .background(Color(0xFF111111))
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:512:                    .background(Color(0xFF1E1E1E))
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:592:            .background(Color(0xFF111111))
+app/src/main/java/com/sednium/kryptonide/ui/terminal/TerminalPanel.kt:640:                .background(if (isConnected && value.text.isNotEmpty()) TermGreen else Color(0xFF2A2A2A))

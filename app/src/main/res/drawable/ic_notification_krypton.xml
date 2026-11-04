@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Monochrome Krypton Diamond Emblem for Status Bar Notifications -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2L2,8l10,14l10,-14L12,2z M12,4.4L18.8,8.5L12,12.5L5.2,8.5L12,4.4z M11,14.5L5.6,9.8l5.4,7.6V14.5z M13,17.4l5.4,-7.6L13,14.5V17.4z" />
+</vector>

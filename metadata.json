@@ -1,0 +1,6 @@
+{
+  "name": "Krypton IDE",
+  "description": "A powerful Integrated Development Environment.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,26 @@
+# Gradle & Build caches
+/.gradle/
+/build/
+/app/build/
+/app/.cxx/
+/.cxx/
+
+# Kotlin & IDE
+/.kotlin/
+/.idea/
+*.iml
+/.acside/
+
+# Signing keys & local credentials
+local.properties
+*.jks
+*.keystore
+*.p12
+.env
+
+# Binary artifacts & logs
+*.apk
+*.aab
+*.log
+*.hprof
+*.tmp
