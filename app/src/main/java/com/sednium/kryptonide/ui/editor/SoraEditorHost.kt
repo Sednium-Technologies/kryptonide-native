@@ -2,6 +2,7 @@ package com.sednium.kryptonide.ui.editor
 
 import android.content.Context
 import com.sednium.kryptonide.ui.lsp.LspManager
+import io.github.rosemoe.sora.event.BuildEditorInfoEvent
 import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.event.KeyBindingEvent
 import io.github.rosemoe.sora.event.SelectionChangeEvent
@@ -64,6 +65,8 @@ class SoraEditorHost(
     private var pendingThemeAction: (() -> Unit)? = null
     private var isLoadingFile = false
     private var isAutoClosingTag = false
+    var isInternalEdit: Boolean = false
+        private set
 
     var keymapPreset: String = KeymapManager.PRESET_VSCODE
     var onSaveShortcut: (() -> Unit)? = null
@@ -87,33 +90,56 @@ class SoraEditorHost(
             return editor
         }
 
+        val monoTypeface = runCatching {
+            android.graphics.Typeface.createFromAsset(ctx.assets, "fonts/jetbrainsmono_regular.ttf")
+        }.getOrDefault(android.graphics.Typeface.MONOSPACE)
+
         editor = CodeEditor(ctx).apply {
             isWordwrap = false
             setTextSize(currentFontSizeSp)
+            typefaceText = monoTypeface
+            typefaceLineNumber = monoTypeface
+            setLigatureEnabled(false)
+            setTextLetterSpacing(0f)
+            setTextScaleX(1f)
+            tabWidth = 4
             isBlockLineEnabled = true
             setHighlightCurrentBlock(true)
             setBlockLineWidth(1.5f)
             props.cancelCompletionNs = 0L
-            props.autoCompletionOnComposing = true
-            val bottomPadPx = (32 * ctx.resources.displayMetrics.density).toInt()
-            setPadding(paddingLeft, paddingTop, paddingRight, bottomPadPx)
+            props.autoCompletionOnComposing = false
+            props.disallowSuggestions = true
+            props.trackComposingTextOnCommit = false
+            props.minimizeComposingTextUpdate = false
+            props.cacheRenderNodeForLongLines = false
 
-            // Disable autocorrect/smart-punctuation. Confirmed real bug on-device:
-            // the keyboard was substituting straight quotes for curly ones
-            // ("en" -> "en"), which silently breaks HTML/CSS/JS/JSON syntax on
-            // save. TYPE_TEXT_VARIATION_URI is the standard trick here — Android
-            // keyboards (Gboard, SwiftKey, Samsung) suppress autocorrect and
-            // smart-punctuation far more reliably for it than
-            // TYPE_TEXT_FLAG_NO_SUGGESTIONS alone, which some keyboards only
-            // honor for the suggestion strip while still silently substituting
-            // punctuation underneath.
+            // Sleek, slim modern scrollbars
+            setScrollBarEnabled(true)
+            isVerticalScrollBarEnabled = true
+            isHorizontalScrollBarEnabled = true
+            setVerticalScrollbarTrackDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            setHorizontalScrollbarTrackDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            setVerticalScrollbarThumbDrawable(SleekScrollbarDrawable(this, isVertical = true))
+            setHorizontalScrollbarThumbDrawable(SleekScrollbarDrawable(this, isVertical = false))
+
+            // Standard code editor input type without composing spans or URI variation quirks.
+            // TYPE_TEXT_VARIATION_URI causes soft keyboards (like Gboard) to enter URL mode, which segments words at dots and slashes,
+            // corrupting cursor column offsets and causing edits to happen to the left of the caret.
             runCatching {
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or
                     android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                    android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
-                    android.text.InputType.TYPE_TEXT_VARIATION_URI
+                    android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             }.onFailure { e ->
                 android.util.Log.e("SoraEditorHost", "Failed to set inputType: ${e.message}", e)
+            }
+
+            subscribeEvent(BuildEditorInfoEvent::class.java) { event, _ ->
+                event.editorInfo.inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                    android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                event.editorInfo.imeOptions = event.editorInfo.imeOptions or
+                    android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING or
+                    android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
             }
             activeColorScheme?.let { colorScheme = it } ?: run {
                 colorScheme = EditorColorScheme()
@@ -122,7 +148,12 @@ class SoraEditorHost(
             subscribeEvent(ContentChangeEvent::class.java) { event, _ ->
                 if (isLoadingFile) return@subscribeEvent
                 val content = text.toString()
-                onContentChanged(content)
+                isInternalEdit = true
+                try {
+                    onContentChanged(content)
+                } finally {
+                    isInternalEdit = false
+                }
 
                 // Spck-style auto-close HTML tag on '>', smart block-split on Enter, & hide completion on statement-ending punctuation
                 if (!isAutoClosingTag && event.action == ContentChangeEvent.ACTION_INSERT) {
@@ -366,10 +397,11 @@ class SoraEditorHost(
         } else language
         currentLanguageId = resolvedLang
         saveDebounceJob?.cancel()
+        val normalized = content.replace("\r\n", "\n").replace("\r", "\n")
         isLoadingFile = true
         try {
             runCatching {
-                editor.setText(content)
+                editor.setText(normalized)
             }.onFailure { e ->
                 android.util.Log.e("SoraEditorHost", "setText failed for $filename: ${e.message}", e)
             }
@@ -386,10 +418,10 @@ class SoraEditorHost(
         val lm = lspManager
         val uriFn = uriProvider
         val uri = uriFn?.invoke() ?: "inmemory://$filename"
-        MonacoRuntime.syncBuffer(uri, resolvedLang, content)
+        MonacoRuntime.syncBuffer(uri, resolvedLang, normalized)
 
         if (lm != null && uriFn != null) {
-            runCatching { lm.didOpen(resolvedLang, uriFn(), content) }.onFailure { e ->
+            runCatching { lm.didOpen(resolvedLang, uriFn(), normalized) }.onFailure { e ->
                 android.util.Log.e("SoraEditorHost", "lsp didOpen failed for $filename: ${e.message}", e)
             }
         }
@@ -639,16 +671,17 @@ class SoraEditorHost(
         editor.setSelection(0, 0)
     }
 
-    fun setWordWrap(enabled: Boolean) { if (::editor.isInitialized) editor.isWordwrap = enabled }
+    fun setWordWrap(enabled: Boolean) {
+        if (::editor.isInitialized && editor.isWordwrap != enabled) {
+            editor.isWordwrap = enabled
+        }
+    }
     fun toggleWordWrap() { if (::editor.isInitialized) editor.isWordwrap = !editor.isWordwrap }
     fun isWordWrapEnabled(): Boolean = if (::editor.isInitialized) editor.isWordwrap else false
 
-    // Same is<Feature> property convention as isWordwrap above (confirmed working) —
-    // unverified against the actual sora-editor artifact like the theming/diagnostics
-    // methods elsewhere in this file, so double-check these two specifically on a
-    // real build too.
     fun setLineNumbersEnabled(enabled: Boolean) {
         if (!::editor.isInitialized) return
+        if (editor.isLineNumberEnabled == enabled) return
         runCatching { editor.isLineNumberEnabled = enabled }.onFailure { e ->
             android.util.Log.e("SoraEditorHost", "setLineNumbersEnabled failed: ${e.message}", e)
         }
@@ -656,6 +689,7 @@ class SoraEditorHost(
 
     fun setIndentationGuidesEnabled(enabled: Boolean) {
         if (!::editor.isInitialized) return
+        if (editor.isBlockLineEnabled == enabled) return
         runCatching { editor.isBlockLineEnabled = enabled }.onFailure { e ->
             android.util.Log.e("SoraEditorHost", "setIndentationGuidesEnabled failed: ${e.message}", e)
         }
@@ -666,7 +700,16 @@ class SoraEditorHost(
         if (kotlin.math.abs(currentFontSizeSp - clamped) < 0.25f) return
         currentFontSizeSp = clamped
         lastReportedFontSizeSp = Math.round(clamped)
-        if (::editor.isInitialized) editor.setTextSize(currentFontSizeSp)
+        if (::editor.isInitialized) {
+            val targetPx = android.util.TypedValue.applyDimension(
+                android.util.TypedValue.COMPLEX_UNIT_SP,
+                currentFontSizeSp,
+                context.resources.displayMetrics
+            )
+            if (kotlin.math.abs(editor.textSizePx - targetPx) > 0.5f) {
+                editor.setTextSize(currentFontSizeSp)
+            }
+        }
     }
 
     fun increaseFontSize() {
@@ -719,21 +762,69 @@ class SoraEditorHost(
     fun setContent(newContent: String) = setContent(newContent, null)
     fun setContent(newContent: String, cursorLine: Int?) {
         if (!::editor.isInitialized) return
-        editor.setText(newContent)
-        if (cursorLine != null) gotoLine(cursorLine)
+        val normalized = newContent.replace("\r\n", "\n").replace("\r", "\n")
+        if (normalized == editor.text.toString()) return
+        isLoadingFile = true
+        try {
+            editor.setText(normalized)
+            if (cursorLine != null) gotoLine(cursorLine)
+        } finally {
+            isLoadingFile = false
+        }
     }
 
+    private var lastAppliedTypeface: android.graphics.Typeface? = null
+
     /**
-     * Real native font application — unlike Monaco (which needed a CSS
-     * @font-face injected as a base64 data-URI), Android just loads a
-     * Typeface directly from the asset or file path. See FontManager in
-     * ui/settings for where fontItem.fileName / filePath come from.
+     * Real native font application. Ensures the typeface is strictly fixed-width monospace,
+     * disables font ligatures, resets artificial letter spacing, and recomputes text layout.
      */
     fun applyTypeface(typeface: android.graphics.Typeface) {
         if (!::editor.isInitialized) return
-        runCatching { editor.setTypefaceText(typeface) }.onFailure { e ->
+        val effectiveTypeface = if (isMonospaceTypeface(typeface)) {
+            typeface
+        } else {
+            android.util.Log.w("SoraEditorHost", "Typeface is not monospace! Falling back to JetBrains Mono.")
+            runCatching {
+                android.graphics.Typeface.createFromAsset(context.assets, "fonts/jetbrainsmono_regular.ttf")
+            }.getOrDefault(android.graphics.Typeface.MONOSPACE)
+        }
+
+        if (lastAppliedTypeface === effectiveTypeface && editor.typefaceText === effectiveTypeface) return
+        lastAppliedTypeface = effectiveTypeface
+
+        runCatching {
+            editor.typefaceText = effectiveTypeface
+            editor.typefaceLineNumber = effectiveTypeface
+            editor.setLigatureEnabled(false)
+            editor.setTextLetterSpacing(0f)
+            editor.setTextScaleX(1f)
+            editor.setTextSizePx(editor.textSizePx)
+            editor.renderContext?.invalidateRenderNodes()
+            editor.setWordwrap(editor.isWordwrap)
+            editor.invalidate()
+        }.onFailure { e ->
             android.util.Log.e("SoraEditorHost", "applyTypeface failed: ${e.message}", e)
         }
+    }
+
+    private fun isMonospaceTypeface(tf: android.graphics.Typeface): Boolean {
+        return runCatching {
+            val paint = android.graphics.Paint().apply {
+                this.typeface = tf
+                this.textSize = 24f
+                this.letterSpacing = 0f
+            }
+            val w1 = paint.measureText("i")
+            val w2 = paint.measureText("W")
+            val w3 = paint.measureText(".")
+            val w4 = paint.measureText("0")
+            val w5 = paint.measureText(" ")
+            kotlin.math.abs(w1 - w2) < 0.1f &&
+                kotlin.math.abs(w2 - w3) < 0.1f &&
+                kotlin.math.abs(w3 - w4) < 0.1f &&
+                kotlin.math.abs(w4 - w5) < 0.1f
+        }.getOrDefault(true)
     }
 
     /**
@@ -806,6 +897,10 @@ class SoraEditorHost(
             scheme.setColor(EditorColorScheme.SELECTED_TEXT_BACKGROUND, selection)
             scheme.setColor(EditorColorScheme.SELECTION_INSERT, cursor)
             scheme.setColor(EditorColorScheme.SELECTION_HANDLE, cursor)
+            scheme.setColor(EditorColorScheme.SCROLL_BAR_TRACK, android.graphics.Color.TRANSPARENT)
+            val isLight = theme == EditorTheme.LIGHT
+            scheme.setColor(EditorColorScheme.SCROLL_BAR_THUMB, if (isLight) 0x40000000.toInt() else 0x4DFFFFFF.toInt())
+            scheme.setColor(EditorColorScheme.SCROLL_BAR_THUMB_PRESSED, if (isLight) 0x80000000.toInt() else 0xA0FFFFFF.toInt())
 
             when (theme) {
                 EditorTheme.LIGHT -> {
@@ -905,6 +1000,7 @@ class SoraEditorHost(
         }
         runCatching {
             val scheme = SoraMonacoAdapter.monacoThemeToEditorColorScheme(themeJson)
+            scheme.setColor(EditorColorScheme.SCROLL_BAR_TRACK, android.graphics.Color.TRANSPARENT)
             activeColorScheme = scheme
             editor.colorScheme = scheme
             editor.isBlockLineEnabled = true

@@ -86,4 +86,38 @@ class MiniCpmToolParserTest {
         assertTrue(formatted.contains("<|im_start|>assistant"))
         assertTrue(formatted.contains("<think>"))
     }
+
+    @Test
+    fun testDispatcherExtractsMiniCpmXmlFunctionCalls() {
+        val xmlText = """
+            <think>I need to search the codebase for index.html</think>
+            <function name="search_grep">
+            <param name="pattern">index.html</param>
+            </function>
+        """.trimIndent()
+
+        val calls = NeedleToolDispatcher.extractModelToolCalls(xmlText)
+        assertEquals(1, calls.size)
+        assertEquals("search_grep", calls[0].toolName)
+        assertEquals("index.html", calls[0].arguments["pattern"])
+    }
+
+    @Test
+    fun testDispatcherExtractsStandardToolCalls() {
+        val jsonText = """
+            <tool_call name="fs_read_file">{"path": "src/App.jsx"}</tool_call>
+        """.trimIndent()
+
+        val calls = NeedleToolDispatcher.extractModelToolCalls(jsonText)
+        assertEquals(1, calls.size)
+        assertEquals("fs_read_file", calls[0].toolName)
+        assertEquals("src/App.jsx", calls[0].arguments["path"])
+    }
+
+    @Test
+    fun testAiUiStateDefaultsToMiniCpm() {
+        val defaultState = com.sednium.kryptonide.ui.ai.AiUiState()
+        assertEquals(PocketModels.MINICPM_MODEL_ID, defaultState.model)
+        assertEquals("pocket", defaultState.provider)
+    }
 }

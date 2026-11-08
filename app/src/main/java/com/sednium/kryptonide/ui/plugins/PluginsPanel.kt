@@ -275,9 +275,17 @@ private fun PluginCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(plugin.author, color = colors.Secondary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        plugin.author,
+                        color = colors.Secondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f, fill = false),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     Text("•", color = colors.Muted.copy(alpha = 0.4f), fontSize = 10.sp)
-                    Text("v${plugin.version}", color = colors.Muted, fontSize = 11.sp)
+                    Text("v${plugin.version}", color = colors.Muted, fontSize = 11.sp, maxLines = 1, softWrap = false)
                     if (plugin.downloads.isNotEmpty()) {
                         Text("•", color = colors.Muted.copy(alpha = 0.4f), fontSize = 10.sp)
                         Row(
@@ -285,26 +293,30 @@ private fun PluginCard(
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             Icon(Lucide.Download, null, tint = colors.Muted, modifier = Modifier.size(11.dp))
-                            Text(plugin.downloads, color = colors.Muted, fontSize = 11.sp)
+                            Text(plugin.downloads, color = colors.Muted, fontSize = 11.sp, maxLines = 1, softWrap = false)
                         }
                     }
                     if (plugin.rating > 0f) {
                         Text("•", color = colors.Muted.copy(alpha = 0.4f), fontSize = 10.sp)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             Icon(
                                 Lucide.Star,
                                 contentDescription = "Rating",
                                 tint = Color(0xFFFFB800),
-                                modifier = Modifier.size(12.dp)
+                                modifier = Modifier
+                                    .size(11.dp)
+                                    .offset(y = (-1).dp)
                             )
                             Text(
                                 "%.1f".format(plugin.rating),
                                 color = colors.OnBackground.copy(alpha = 0.9f),
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }

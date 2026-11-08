@@ -239,16 +239,33 @@ fun ImportHuggingFaceDialog(
                                             .border(0.5.dp, badgeColor, RoundedCornerShape(4.dp))
                                             .padding(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
-                                        Text(
-                                            when (model.oomRisk) {
-                                                OomRiskLevel.LOW -> "🟢 Safe"
-                                                OomRiskLevel.MODERATE -> "🟡 Moderate"
-                                                OomRiskLevel.HIGH -> "🔴 High OOM Risk"
-                                            },
-                                            color = badgeColor,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            val riskIcon = when (model.oomRisk) {
+                                                OomRiskLevel.LOW -> Lucide.CircleCheck
+                                                OomRiskLevel.MODERATE -> Lucide.CircleAlert
+                                                OomRiskLevel.HIGH -> Lucide.TriangleAlert
+                                            }
+                                            val riskText = when (model.oomRisk) {
+                                                OomRiskLevel.LOW -> "Safe"
+                                                OomRiskLevel.MODERATE -> "Moderate"
+                                                OomRiskLevel.HIGH -> "High OOM Risk"
+                                            }
+                                            Icon(
+                                                riskIcon,
+                                                contentDescription = null,
+                                                tint = badgeColor,
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Text(
+                                                riskText,
+                                                color = badgeColor,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
 

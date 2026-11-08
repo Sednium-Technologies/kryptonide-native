@@ -8,7 +8,9 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import com.composables.icons.lucide.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -103,7 +105,7 @@ fun WelcomeScreen() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("⚡", fontSize = 48.sp)
+            Icon(Lucide.Zap, contentDescription = null, tint = LocalKryptonColors.current.Primary, modifier = Modifier.size(48.dp))
             Text("Krypton IDE", color = LocalKryptonColors.current.OnBackground, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text("Open a file from the explorer", color = LocalKryptonColors.current.Muted, fontSize = 14.sp)
         }

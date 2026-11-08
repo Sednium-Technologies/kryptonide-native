@@ -642,6 +642,29 @@ object SpckCompletionEngine {
         publisher: CompletionPublisher,
         addedLabels: MutableSet<String>
     ): Boolean {
+        // 0. Suppress HTML tag completions if cursor is inside plain text content between '>' and '<'
+        // ONLY trigger HTML tag completions when preceding token has '<' or '</'
+        val lastGt = beforeCursor.lastIndexOf('>')
+        val lastLt = beforeCursor.lastIndexOf('<')
+        val isInsideTextContent = if (lastGt != -1 || lastLt != -1) {
+            lastGt > lastLt
+        } else {
+            var inside = false
+            for (l in (lineIdx - 1) downTo (lineIdx - 10).coerceAtLeast(0)) {
+                val prevLine = runCatching { content.getLine(l).toString() }.getOrNull() ?: continue
+                val pGt = prevLine.lastIndexOf('>')
+                val pLt = prevLine.lastIndexOf('<')
+                if (pGt != -1 || pLt != -1) {
+                    inside = pGt > pLt
+                    break
+                }
+            }
+            inside
+        }
+        if (isInsideTextContent) {
+            return false
+        }
+
         // 1. Check if cursor is typing a closing tag: `</` or `</tagPrefix`
         val closeTagMatch = Regex("""<\s*/\s*([a-zA-Z0-9:-]*)$""").find(beforeCursor)
         if (closeTagMatch != null) {
@@ -832,36 +855,12 @@ object SpckCompletionEngine {
             }
         }
 
-        // Suggest HTML tags when typing bare tag names (e.g. `div`, `font`, `h1`, `script`, `link`, `html5`)
-        if (prefix.isNotEmpty()) {
+        // Only allow HTML5 boilerplate snippet when typing 'html5' on an empty line
+        if (prefix.isNotEmpty() && beforeCursor.trim() == prefix) {
             if ("html5".startsWith(prefix, ignoreCase = true) && addedLabels.add("html5 (HTML5 Boilerplate)")) {
                 val html5 = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n\t<meta charset=\"UTF-8\">\n\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\t<title>\${1:Document}</title>\n</head>\n<body>\n\t\$0\n</body>\n</html>"
                 addReplacementItem(publisher, "html5 (HTML5 Boilerplate)", "Full HTML5 Page", prefix.length, html5, isSnippet = true)
             }
-
-            for (spec in HTML_TAGS) {
-                if (spec.tag.startsWith(prefix, ignoreCase = true)) {
-                    val label = "<${spec.tag}>"
-                    if (addedLabels.add(label)) {
-                        val snippet = spec.snippetBody ?: if (spec.isVoid) {
-                            "<${spec.tag}>"
-                        } else {
-                            "<${spec.tag}>\$0</${spec.tag}>"
-                        }
-                        addReplacementItem(
-                            publisher = publisher,
-                            label = label,
-                            detail = spec.detail,
-                            replaceLength = prefix.length,
-                            insertText = snippet,
-                            isSnippet = snippet.contains('$')
-                        )
-                    }
-                }
-            }
-
-            // Also include in-document words
-            populateDocumentWords(content, lineIdx, prefix, publisher, addedLabels)
         }
 
         return addedLabels.isNotEmpty()

@@ -376,6 +376,18 @@ private fun TerminalToolbar(
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (onClose != null) {
+            IconButton(onClick = onClose, modifier = Modifier.size(30.dp)) {
+                Icon(
+                    Lucide.ArrowLeft,
+                    contentDescription = "Back to Editor",
+                    tint = colors.OnSurface,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+        }
+
         // Mode Selector Dropdown
         Box {
             val (modeColor, modeBg) = when (state.connectionMode) {
@@ -506,7 +518,7 @@ private fun TerminalToolbar(
         if (onClose != null) {
             Spacer(Modifier.width(2.dp))
             IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
-                Icon(Lucide.ChevronDown, "Close Terminal", tint = colors.Muted, modifier = Modifier.size(20.dp))
+                Icon(Lucide.X, "Close Terminal", tint = colors.OnSurface, modifier = Modifier.size(18.dp))
             }
         }
     }

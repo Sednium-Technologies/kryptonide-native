@@ -21,34 +21,41 @@ class PocketModelsTest {
     }
 
     @Test
-    fun testDefaultModelIsNeedle3() {
+    fun testDefaultModelIsMiniCpm1B() {
         val defaultModel = PocketModels.getDefaultModel()
-        assertEquals("needle-3-q4", defaultModel.id)
-        assertEquals("Needle 3 (Mobile Agent)", defaultModel.name)
+        assertEquals(PocketModels.MINICPM_MODEL_ID, defaultModel.id)
+        assertEquals("minicpm5-1b-thinking-q4", defaultModel.id)
+        assertTrue(defaultModel.name.contains("MiniCPM 1B"))
         assertTrue(defaultModel.isSystemOne)
+        assertEquals(ModelFormat.GGUF, defaultModel.format)
+
+        // Verify LFM and Needle are excluded from catalog
+        assertNull("LFM-250M should not be in catalog", PocketModels.findCatalogSpec("lfm-250m-q4"))
+        assertNull("Needle 3 should not be in catalog", PocketModels.findCatalogSpec("needle-3-q4"))
     }
 
     @Test
     fun testMiniCpm5ThinkingModelSpec() {
         val model = PocketModels.findCatalogSpec("minicpm5-1b-thinking-q4")
-        assertNotNull("MiniCPM5-1B Thinking should exist in catalog", model)
-        assertEquals("MiniCPM5 1B (Claude Opus Thinking)", model!!.name)
+        assertNotNull("MiniCPM 1B Thinking should exist in catalog", model)
+        assertEquals("MiniCPM 1B (Base Brain)", model!!.name)
         assertEquals(ModelFormat.GGUF, model.format)
         assertEquals(1.08f, model.parameterCountBillion, 0.01f)
         assertEquals("Q4_K_M", model.quantization)
+        assertTrue(model.isSystemOne)
         assertNotNull("Download URL must be present", model.downloadUrl)
         assertTrue("Download URL should point to HuggingFace GGUF", model.downloadUrl!!.contains("MiniCPM5-1B-Claude-Opus-Fable5-V2-Thinking"))
+
+        val helper = PocketModels.getMiniCpmModel()
+        assertEquals("minicpm5-1b-thinking-q4", helper.id)
+        assertTrue(helper.isSystemOne)
     }
 
     @Test
-    fun testNeedle3SpecAndCactUrl() {
-        val needle = PocketModels.findCatalogSpec("needle-3-q4")
-        assertNotNull("Needle 3 should exist in catalog", needle)
-        assertNotNull("Needle 3 must have downloadUrl", needle!!.downloadUrl)
-        assertTrue("Needle 3 downloadUrl should point to needle3.cact", needle.downloadUrl!!.endsWith(".cact"))
-        assertEquals(ModelFormat.CACT, needle.format)
-        assertTrue("Needle 3 approx size should be ~34MB", needle.sizeBytesApprox in (30L * 1024 * 1024)..(40L * 1024 * 1024))
-        assertTrue("Needle 3 should be marked SystemOne", needle.isSystemOne)
+    fun testNeedle3RemovedFromCatalog() {
+        assertNull(PocketModels.findCatalogSpec(PocketModels.NEEDLE_3_MODEL_ID))
+        val fallback = PocketModels.getNeedleModel()
+        assertEquals(PocketModels.MINICPM_MODEL_ID, fallback.id)
     }
 
     @Test

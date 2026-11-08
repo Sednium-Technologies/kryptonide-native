@@ -16,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
 enum class DownloadStatus {
     IDLE,
     DOWNLOADING,
+    PAUSED,
     COMPLETED,
     FAILED,
     CANCELLED
@@ -82,6 +83,7 @@ object ModelDownloadManager {
                 f.length() > 0 && (
                     name.contains(spec.id.lowercase()) ||
                     (spec.id.contains("needle") && name.contains("needle")) ||
+                    (spec.id.contains("lfm") && name.contains("lfm")) ||
                     (spec.id.contains("minicpm") && name.contains("minicpm")) ||
                     (spec.id.contains("laya") && (name.contains("laya") || name.contains("0.5b")))
                 )
@@ -121,7 +123,9 @@ object ModelDownloadManager {
         val tempFile = File(parentDir, "${targetFile.name}.downloading")
         tempFile.parentFile?.mkdirs()
 
-        updateState(spec.id, ModelDownloadProgress(spec.id, DownloadStatus.DOWNLOADING, 0f, 0L, spec.sizeBytesApprox))
+        val existingBytes = if (tempFile.exists()) tempFile.length() else 0L
+        val initialProgress = if (spec.sizeBytesApprox > 0) (existingBytes.toFloat() / spec.sizeBytesApprox.toFloat()).coerceIn(0f, 1f) else 0f
+        updateState(spec.id, ModelDownloadProgress(spec.id, DownloadStatus.DOWNLOADING, initialProgress, existingBytes, spec.sizeBytesApprox))
 
         val job = scope.launch {
             var connection: HttpURLConnection? = null
@@ -140,6 +144,9 @@ object ModelDownloadManager {
                         instanceFollowRedirects = true
                         setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Kryptonide/1.0")
                         setRequestProperty("Accept", "*/*")
+                        if (existingBytes > 0) {
+                            setRequestProperty("Range", "bytes=$existingBytes-")
+                        }
                     }
                     conn.connect()
                     connection = conn
@@ -162,26 +169,32 @@ object ModelDownloadManager {
                 }
 
                 val activeConn = connection ?: throw IllegalStateException("Failed to open connection")
+                val isPartial = activeConn.responseCode == 206
                 if (activeConn.responseCode !in 200..299) {
                     throw IllegalStateException("Server returned HTTP ${activeConn.responseCode}")
                 }
 
-                val contentLength = activeConn.contentLengthLong.let { if (it > 0) it else spec.sizeBytesApprox }
+                val totalBytes = if (isPartial) {
+                    val contentRange = activeConn.getHeaderField("Content-Range")
+                    val totalFromRange = contentRange?.substringAfterLast('/')?.toLongOrNull()
+                    totalFromRange ?: (existingBytes + activeConn.contentLengthLong.coerceAtLeast(0L))
+                } else {
+                    activeConn.contentLengthLong.let { if (it > 0) it else spec.sizeBytesApprox }
+                }
+
                 input = activeConn.inputStream
-                output = FileOutputStream(tempFile)
+                output = FileOutputStream(tempFile, isPartial)
 
                 val buffer = ByteArray(64 * 1024)
                 var bytesRead: Int
-                var totalRead = 0L
+                var totalRead = if (isPartial) existingBytes else 0L
                 var lastUpdate = System.currentTimeMillis()
                 var lastSpeedCalcTime = System.currentTimeMillis()
-                var bytesAtLastSpeedCalc = 0L
+                var bytesAtLastSpeedCalc = totalRead
                 var currentSpeedMbPerSec = 0.0
 
                 while (input.read(buffer).also { bytesRead = it } != -1) {
                     if (!isActive) {
-                        tempFile.delete()
-                        updateState(spec.id, ModelDownloadProgress(spec.id, DownloadStatus.CANCELLED))
                         return@launch
                     }
                     output.write(buffer, 0, bytesRead)
@@ -199,15 +212,15 @@ object ModelDownloadManager {
                         bytesAtLastSpeedCalc = totalRead
                     }
 
-                    if (now - lastUpdate > 250 || totalRead == contentLength) {
+                    if (now - lastUpdate > 250 || totalRead == totalBytes) {
                         lastUpdate = now
-                        val fraction = if (contentLength > 0) (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f) else 0f
+                        val fraction = if (totalBytes > 0) (totalRead.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) else 0f
                         updateState(spec.id, ModelDownloadProgress(
                             modelId = spec.id,
                             status = DownloadStatus.DOWNLOADING,
                             progress = fraction,
                             downloadedBytes = totalRead,
-                            totalBytes = contentLength,
+                            totalBytes = totalBytes,
                             speedMbPerSec = currentSpeedMbPerSec
                         ))
                     }
@@ -240,10 +253,12 @@ object ModelDownloadManager {
                 }
 
             } catch (e: CancellationException) {
-                tempFile.delete()
-                updateState(spec.id, ModelDownloadProgress(spec.id, DownloadStatus.CANCELLED))
+                val current = _downloadStates.value[spec.id]
+                if (current?.status != DownloadStatus.PAUSED) {
+                    tempFile.delete()
+                    updateState(spec.id, ModelDownloadProgress(spec.id, DownloadStatus.CANCELLED))
+                }
             } catch (e: Exception) {
-                tempFile.delete()
                 updateState(spec.id, ModelDownloadProgress(
                     modelId = spec.id,
                     status = DownloadStatus.FAILED,
@@ -260,10 +275,40 @@ object ModelDownloadManager {
         activeJobs[spec.id] = job
     }
 
-    fun cancelDownload(modelId: String) {
+    fun pauseDownload(modelId: String) {
+        val current = _downloadStates.value[modelId]
+        if (current != null) {
+            updateState(modelId, current.copy(status = DownloadStatus.PAUSED, speedMbPerSec = 0.0))
+        }
         val job = activeJobs.remove(modelId)
         job?.cancel()
+    }
+
+    fun resumeDownload(
+        context: Context,
+        spec: LocalModelSpec,
+        onComplete: (() -> Unit)? = null
+    ) {
+        startDownload(context, spec, onComplete)
+    }
+
+    fun stopDownload(
+        modelId: String,
+        context: Context? = null,
+        spec: LocalModelSpec? = null
+    ) {
+        val job = activeJobs.remove(modelId)
+        job?.cancel()
+        if (context != null && spec != null) {
+            val targetFile = getTargetModelFile(context, spec)
+            val tempFile = File(targetFile.parentFile, "${targetFile.name}.downloading")
+            if (tempFile.exists()) tempFile.delete()
+        }
         updateState(modelId, ModelDownloadProgress(modelId, DownloadStatus.CANCELLED))
+    }
+
+    fun cancelDownload(modelId: String) {
+        stopDownload(modelId)
     }
 
     private fun updateState(modelId: String, state: ModelDownloadProgress) {

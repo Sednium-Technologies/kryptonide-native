@@ -11,7 +11,7 @@ object RepetitionGuard {
      * Truncates [text] if any line or phrase repeats [maxRepeats] or more times consecutively.
      * Retains at most [maxRepeats] - 1 occurrences of the repeating line/phrase.
      */
-    fun detectAndTrimRepetition(text: String, maxRepeats: Int = 3): String {
+    fun detectAndTrimRepetition(text: String, maxRepeats: Int = 4): String {
         if (text.length < 24) return text
 
         // 1. Line-by-line repetition check
@@ -49,9 +49,10 @@ object RepetitionGuard {
 
     private fun trimPhraseRepetition(text: String, minLen: Int = 8, maxLen: Int = 60, maxRepeats: Int = 3): String {
         for (len in minLen..maxLen) {
-            if (len * maxRepeats > text.length) break
+            val effectiveThreshold = if (len < 16) maxOf(maxRepeats, 5) else maxRepeats
+            if (len * effectiveThreshold > text.length) break
             var i = 0
-            while (i + len * maxRepeats <= text.length) {
+            while (i + len * effectiveThreshold <= text.length) {
                 val candidate = text.substring(i, i + len)
                 if (candidate.isBlank() || candidate.all { !it.isLetterOrDigit() }) {
                     i++
@@ -61,8 +62,8 @@ object RepetitionGuard {
                 while (i + (matches + 1) * len <= text.length &&
                     text.substring(i + matches * len, i + (matches + 1) * len) == candidate) {
                     matches++
-                    if (matches >= maxRepeats) {
-                        return text.substring(0, i + (maxRepeats - 1) * len).trimEnd()
+                    if (matches >= effectiveThreshold) {
+                        return text.substring(0, i + (effectiveThreshold - 1) * len).trimEnd()
                     }
                 }
                 i++

@@ -5,12 +5,24 @@ import com.sednium.kryptonide.data.model.MessageRole
 import com.sednium.kryptonide.ui.editor.LarryBlock
 import com.sednium.kryptonide.ui.editor.LarryTagParser
 import kotlinx.serialization.json.*
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 
 class AiEngineGroqTest {
 
     private val engine = AiEngine()
+
+    @Before
+    fun setUp() {
+        com.sednium.kryptonide.agent.tools.AgentToolRegistry.clear()
+    }
+
+    @After
+    fun tearDown() {
+        com.sednium.kryptonide.agent.tools.AgentToolRegistry.clear()
+    }
 
     @Test
     fun testGroqBuildRequestHeadersAndUrl() {

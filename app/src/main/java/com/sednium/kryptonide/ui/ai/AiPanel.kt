@@ -26,7 +26,7 @@ import com.sednium.kryptonide.data.model.MessageRole
 import com.sednium.kryptonide.ui.editor.EditorViewModel
 import com.sednium.kryptonide.ui.theme.LocalKryptonColors
 
-private const val SYSTEM_PROMPT = "You are Krypton IDE's AI assistant. You have access to tools to read and edit files in the user's project. Always prefer surgical edits (edit_lines, patch_file) over full rewrites. When using patch_file, use exact code that exists in the file. When asked to make changes, read the file first if you haven't already."
+private const val SYSTEM_PROMPT = "You are Oorty Lite, Krypton IDE's AI assistant. You have access to tools to read and edit files in the user's project. Always prefer surgical edits (edit_lines, patch_file) over full rewrites. When using patch_file, use exact code that exists in the file. When asked to make changes, read the file first if you haven't already."
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

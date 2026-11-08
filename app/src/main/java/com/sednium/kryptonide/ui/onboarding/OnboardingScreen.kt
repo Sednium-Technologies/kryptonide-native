@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -36,6 +37,11 @@ import com.sednium.kryptonide.agent.pocket.ModelDownloadManager
 import com.sednium.kryptonide.agent.pocket.PocketModels
 import com.sednium.kryptonide.ui.theme.KryptonColorPalette
 import com.sednium.kryptonide.ui.theme.LocalKryptonColors
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.sednium.kryptonide.data.storage.SettingsStore
+import com.sednium.kryptonide.utils.KryptonHaptics
 import com.sednium.kryptonide.utils.StorageUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -222,29 +228,57 @@ private fun StoragePermissionStep(
 }
 
 @Composable
-private fun NeedleAiSetupStep(
+fun NeedleAiSetupStep(
     colors: KryptonColorPalette,
     onCompleted: () -> Unit
 ) {
     val context = LocalContext.current
-    val needleSpec = remember {
-        PocketModels.PREDEFINED_CATALOG.find { it.id == "needle-3-q4" }
-            ?: PocketModels.PREDEFINED_CATALOG.first()
+    val view = LocalView.current
+
+    val minicpmSpec = remember {
+        PocketModels.findCatalogSpec(PocketModels.MINICPM_MODEL_ID)
+            ?: PocketModels.getDefaultModel()
     }
 
-    var isInstalled by remember {
-        mutableStateOf(ModelDownloadManager.isModelInstalled(context, needleSpec))
+    var isModelInstalled by remember {
+        mutableStateOf(ModelDownloadManager.isModelInstalled(context, minicpmSpec))
     }
 
     val downloadStates by ModelDownloadManager.downloadStates.collectAsState()
-    val dlState = downloadStates[needleSpec.id]
+    val minicpmDl = downloadStates[minicpmSpec.id]
 
-    LaunchedEffect(dlState?.status) {
-        if (dlState?.status == DownloadStatus.COMPLETED) {
-            isInstalled = true
-            // Warm up model in RAM immediately
+    val isDownloading = minicpmDl?.status == DownloadStatus.DOWNLOADING
+
+    LaunchedEffect(minicpmDl?.status) {
+        val modelDone = isModelInstalled || ModelDownloadManager.isModelInstalled(context, minicpmSpec) || minicpmDl?.status == DownloadStatus.COMPLETED
+        isModelInstalled = modelDone
+
+        if (modelDone) {
+            SettingsStore(context).setSelectedPocketModelIdSync(PocketModels.MINICPM_MODEL_ID)
+            SettingsStore(context).setModelChoice(PocketModels.MINICPM_MODEL_ID)
             CoroutineScope(Dispatchers.IO).launch {
                 LocalGgufServerManager.preloadModel(context)
+            }
+        }
+    }
+
+    val totalSizeApprox = minicpmSpec.sizeBytesApprox
+    val downloadedBytes = if (isModelInstalled) totalSizeApprox else (minicpmDl?.downloadedBytes ?: 0L)
+    val progress = (downloadedBytes.toFloat() / totalSizeApprox.toFloat()).coerceIn(0f, 1f)
+    val speed = minicpmDl?.speedMbPerSec ?: 0.0
+    val dlMb = downloadedBytes / (1024.0 * 1024.0)
+    val totMb = totalSizeApprox / (1024.0 * 1024.0)
+
+    val startDownload = {
+        KryptonHaptics.click(context, view)
+        if (!isModelInstalled && minicpmDl?.status != DownloadStatus.DOWNLOADING) {
+            ModelDownloadManager.startDownload(context, minicpmSpec) {
+                isModelInstalled = true
+                SettingsStore(context).setSelectedPocketModelIdSync(PocketModels.MINICPM_MODEL_ID)
+                SettingsStore(context).setModelChoice(PocketModels.MINICPM_MODEL_ID)
+                CoroutineScope(Dispatchers.IO).launch {
+                    LocalGgufServerManager.preloadModel(context)
+                }
             }
         }
     }
@@ -253,13 +287,13 @@ private fun NeedleAiSetupStep(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 28.dp, vertical = 36.dp),
+            .padding(horizontal = 24.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Box(
             modifier = Modifier
-                .size(96.dp)
+                .size(80.dp)
                 .clip(CircleShape)
                 .background(colors.Primary.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
@@ -268,65 +302,194 @@ private fun NeedleAiSetupStep(
                 Lucide.Cpu,
                 contentDescription = null,
                 tint = colors.Primary,
-                modifier = Modifier.size(44.dp)
+                modifier = Modifier.size(40.dp)
             )
         }
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
+
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = colors.Primary.copy(alpha = 0.12f),
+            border = androidx.compose.foundation.BorderStroke(0.6.dp, colors.Primary.copy(alpha = 0.35f))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    Lucide.ShieldCheck,
+                    contentDescription = null,
+                    tint = colors.Primary,
+                    modifier = Modifier.size(13.dp)
+                )
+                Text(
+                    text = "Runs 100% Offline in RAM · ~650 MB",
+                    color = colors.Primary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
 
         Text(
-            text = "Needle-3 On-Device AI Setup",
+            text = "MiniCPM 1B Base Brain",
             color = colors.OnBackground,
-            fontSize = 23.sp,
+            fontSize = 21.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
         )
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
 
         Text(
-            text = "Needle-3 is a lightning-fast, ultra-compact ~30MB tool-calling model built for mobile. Download it now to enable instant local coding and assistance offline!",
+            text = "MiniCPM 1B operates as your unified on-device agent for deep reasoning (<think>), implementation planning (<plan>), code editing (<edit>), and full tool execution. 100% offline, zero data leaves your phone.",
             color = colors.Muted,
-            fontSize = 13.5.sp,
+            fontSize = 13.sp,
             textAlign = TextAlign.Center,
-            lineHeight = 20.sp
+            lineHeight = 19.sp
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
 
+        // One and Only Model Card: MiniCPM 1B (Base Brain)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
                 .background(colors.Surface)
-                .border(0.5.dp, colors.Border, RoundedCornerShape(16.dp))
+                .border(0.8.dp, colors.Primary.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
                 .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            OnboardingFeatureRow(
-                icon = Lucide.Zap,
-                title = "Sub-15ms Execution",
-                body = "Runs 100% locally on your phone's processor without consuming internet data or battery.",
-                colors = colors
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f, fill = false),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(colors.Primary.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Lucide.Brain, null, tint = colors.Primary, modifier = Modifier.size(20.dp))
+                    }
+                    Column(modifier = Modifier.weight(1f, fill = false)) {
+                        Text(
+                            text = "MiniCPM 1B",
+                            color = colors.OnBackground,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "Base Brain · Unified On-Device Agent",
+                            color = colors.Muted,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(Modifier.width(10.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.Primary.copy(alpha = 0.12f),
+                    border = androidx.compose.foundation.BorderStroke(0.6.dp, colors.Primary.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(colors.Primary)
+                        )
+                        Text(
+                            text = "100% Offline",
+                            color = colors.Primary,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+            }
+
+            Text(
+                text = "Autonomous coding engine distilled with Claude Opus reasoning. Capable of deep thinking (<think>), structured planning (<plan>), surgical code editing (<edit>), and full 64-tool invocation.",
+                color = colors.Muted,
+                fontSize = 12.sp,
+                lineHeight = 17.sp
             )
-            OnboardingFeatureRow(
-                icon = Lucide.ShieldCheck,
-                title = "Zero Latency & 100% Private",
-                body = "Code edits, syntax fixes, and tool execution never leave your device.",
-                colors = colors
-            )
-            OnboardingFeatureRow(
-                icon = Lucide.HardDrive,
-                title = "Ultra-Lightweight (~34 MB)",
-                body = "Requires only ~256MB RAM. Safe and fluid on any Android device.",
-                colors = colors
-            )
+
+            HorizontalDivider(color = colors.Border.copy(alpha = 0.4f), thickness = 0.5.dp)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(colors.SurfaceVar)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text("Q4_K_M", color = colors.OnSurface, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(colors.SurfaceVar)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text("GGUF", color = colors.OnSurface, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(colors.Primary.copy(alpha = 0.12f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text("RAM Safe", color = colors.Primary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                Text(
+                    text = "~650 MB",
+                    color = colors.OnBackground,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(22.dp))
 
-        // Download / Progress / Completed Action Area
-        if (isInstalled) {
+        // Action Area
+        if (isModelInstalled) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -340,16 +503,16 @@ private fun NeedleAiSetupStep(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Lucide.Check, null, tint = colors.Primary, modifier = Modifier.size(18.dp))
+                    Icon(Lucide.CircleCheck, null, tint = colors.Primary, modifier = Modifier.size(18.dp))
                     Text(
-                        "Needle-3 is ready & primed in RAM",
+                        "Ready in RAM • MiniCPM 1B Base Brain",
                         color = colors.Primary,
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 Text(
-                    "Local inference is ready for instant offline coding.",
+                    "Unified on-device agent is activated and ready.",
                     color = colors.Muted,
                     fontSize = 11.5.sp,
                     textAlign = TextAlign.Center,
@@ -357,24 +520,22 @@ private fun NeedleAiSetupStep(
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(18.dp))
 
             Button(
-                onClick = onCompleted,
+                onClick = {
+                    KryptonHaptics.click(context, view)
+                    onCompleted()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(50.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = colors.Primary)
             ) {
-                Text("Continue to Kryptonide", color = colors.OnPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text("Continue to Kryptonide", color = colors.OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             }
-        } else if (dlState?.status == DownloadStatus.DOWNLOADING) {
-            val progress = dlState?.progress ?: 0f
-            val dlMb = (dlState?.downloadedBytes ?: 0L) / (1024.0 * 1024.0)
-            val totMb = (dlState?.totalBytes ?: needleSpec.sizeBytesApprox) / (1024.0 * 1024.0)
-            val speed = dlState?.speedMbPerSec ?: 0.0
-
+        } else if (isDownloading) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -390,7 +551,7 @@ private fun NeedleAiSetupStep(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Downloading Needle-3...",
+                        "Downloading MiniCPM 1B...",
                         color = colors.OnBackground,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
@@ -436,11 +597,12 @@ private fun NeedleAiSetupStep(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
 
             TextButton(
                 onClick = {
-                    ModelDownloadManager.cancelDownload(needleSpec.id)
+                    KryptonHaptics.click(context, view)
+                    ModelDownloadManager.cancelDownload(minicpmSpec.id)
                     onCompleted()
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -449,14 +611,7 @@ private fun NeedleAiSetupStep(
             }
         } else {
             Button(
-                onClick = {
-                    ModelDownloadManager.startDownload(context, needleSpec) {
-                        isInstalled = true
-                        CoroutineScope(Dispatchers.IO).launch {
-                            LocalGgufServerManager.preloadModel(context)
-                        }
-                    }
-                },
+                onClick = startDownload,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
@@ -465,17 +620,41 @@ private fun NeedleAiSetupStep(
             ) {
                 Icon(Lucide.Download, null, modifier = Modifier.size(18.dp), tint = colors.OnPrimary)
                 Spacer(Modifier.width(8.dp))
-                Text("Download Needle-3 (~34 MB)", color = colors.OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text("Download & Activate MiniCPM 1B (~650MB)", color = colors.OnPrimary, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
             }
 
             Spacer(Modifier.height(10.dp))
 
             TextButton(
-                onClick = onCompleted,
+                onClick = {
+                    KryptonHaptics.click(context, view)
+                    onCompleted()
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Skip for now (use cloud keys or setup later)", color = colors.Muted, fontSize = 13.sp)
             }
+        }
+    }
+}
+
+@Composable
+fun AiOnboardingDialog(
+    colors: KryptonColorPalette,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = colors.Background
+        ) {
+            NeedleAiSetupStep(
+                colors = colors,
+                onCompleted = onDismiss
+            )
         }
     }
 }

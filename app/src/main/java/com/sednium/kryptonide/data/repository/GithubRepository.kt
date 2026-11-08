@@ -235,4 +235,37 @@ class GithubRepository(private val client: OkHttpClient = OkHttpClient()) {
             }
         }
     }
+
+    suspend fun listBranches(token: String, owner: String, repo: String): List<String> = withContext(Dispatchers.IO) {
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/branches?per_page=100")
+            .githubHeaders(token).get().build()
+        val resp = client.newCall(req).execute()
+        if (!resp.isSuccessful) return@withContext listOf("main")
+        val arr = json.parseToJsonElement(resp.body!!.string()).jsonArray
+        val branches = arr.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.content }
+        if (branches.isEmpty()) listOf("main") else branches
+    }
+
+    suspend fun createBranch(token: String, owner: String, repo: String, branch: String, baseBranch: String = "main"): Boolean = withContext(Dispatchers.IO) {
+        val refReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/refs/heads/$baseBranch")
+            .githubHeaders(token).get().build()
+        val baseSha = client.newCall(refReq).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext false
+            val refJson = json.parseToJsonElement(resp.body!!.string()).jsonObject
+            refJson["object"]?.jsonObject?.get("sha")?.jsonPrimitive?.content ?: return@withContext false
+        }
+
+        val body = buildJsonObject {
+            put("ref", "refs/heads/$branch")
+            put("sha", baseSha)
+        }.toString().toRequestBody(JSON_TYPE)
+
+        val createReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/refs")
+            .githubHeaders(token).post(body).build()
+        val resp = client.newCall(createReq).execute()
+        resp.isSuccessful
+    }
 }

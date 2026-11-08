@@ -378,13 +378,13 @@ private fun buildCommands(
     add(PaletteCommand(id = "goto_line", title = "Go to Line $line", subtitle = "Current line", category = PaletteCategory.GO, icon = Lucide.ArrowRight, action = { soraHost.gotoLine(line) }))
 
     // ── AI ───────────────────────────────────────────────────
-    add(PaletteCommand(id = "ai_open", title = "Open Kryptonide AI", subtitle = "Chat with Kryptonide AI about your code", category = PaletteCategory.AI, icon = Lucide.Sparkles, action = { onOpenAi() }))
+    add(PaletteCommand(id = "ai_open", title = "Open Oorty Lite", subtitle = "Chat with Oorty Lite about your code", category = PaletteCategory.AI, icon = Lucide.Sparkles, action = { onOpenAi() }))
     if (word.isNotEmpty()) {
-        add(PaletteCommand(id = "ai_explain", title = "Ask Kryptonide AI to explain \"$word\"", subtitle = "Ask Kryptonide AI to explain this symbol", category = PaletteCategory.AI, icon = Lucide.CircleHelp, action = { onAskAi("Explain `$word` near line $line in this file.") }))
-        add(PaletteCommand(id = "ai_fix", title = "Ask Kryptonide AI to fix Issue at Line $line", subtitle = "Ask Kryptonide AI to fix the problem here", category = PaletteCategory.AI, icon = Lucide.Wrench, action = { onAskAi("Fix the issue around `$word` at line $line.") }))
+        add(PaletteCommand(id = "ai_explain", title = "Ask Oorty Lite to explain \"$word\"", subtitle = "Ask Oorty Lite to explain this symbol", category = PaletteCategory.AI, icon = Lucide.CircleHelp, action = { onAskAi("Explain `$word` near line $line in this file.") }))
+        add(PaletteCommand(id = "ai_fix", title = "Ask Oorty Lite to fix Issue at Line $line", subtitle = "Ask Oorty Lite to fix the problem here", category = PaletteCategory.AI, icon = Lucide.Wrench, action = { onAskAi("Fix the issue around `$word` at line $line.") }))
     }
-    add(PaletteCommand(id = "ai_generate", title = "Generate Code with Kryptonide AI", subtitle = "Describe what to generate", category = PaletteCategory.AI, icon = Lucide.CirclePlus, action = { onOpenAi() }))
-    add(PaletteCommand(id = "ai_review", title = "Review This File with Kryptonide AI", subtitle = "Get Kryptonide AI's analysis of the whole file", category = PaletteCategory.AI, icon = Lucide.ClipboardCheck, action = { onAskAi("Review the current file for bugs, edge cases, and improvements.") }))
+    add(PaletteCommand(id = "ai_generate", title = "Generate Code with Oorty Lite", subtitle = "Describe what to generate", category = PaletteCategory.AI, icon = Lucide.CirclePlus, action = { onOpenAi() }))
+    add(PaletteCommand(id = "ai_review", title = "Review This File with Oorty Lite", subtitle = "Get Oorty Lite's analysis of the whole file", category = PaletteCategory.AI, icon = Lucide.ClipboardCheck, action = { onAskAi("Review the current file for bugs, edge cases, and improvements.") }))
 
     // ── FILE ──────────────────────────────────────────────────
     add(PaletteCommand(id = "save", title = "Save File", category = PaletteCategory.FILE, icon = Lucide.Save, shortcut = "Ctrl+S", action = { onSave() }))

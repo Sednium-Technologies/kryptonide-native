@@ -165,6 +165,7 @@ object SoraMonacoAdapter {
                 colors.optString("scrollbarSlider.activeBackground").takeIf { it.isNotBlank() }?.let { hexColor(it) }?.let {
                     scheme.setColor(EditorColorScheme.SCROLL_BAR_THUMB_PRESSED, it)
                 }
+                scheme.setColor(EditorColorScheme.SCROLL_BAR_TRACK, android.graphics.Color.TRANSPARENT)
             }
 
             // 1. Monaco rules array: [{ token: "...", foreground: "..." }]

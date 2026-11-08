@@ -125,7 +125,7 @@ object LocalGgufServerManager {
 
     /**
      * Preloads model into RAM by starting the local llama-server ahead of time.
-     * Automatically discovers the best available model (prioritizing Needle-3 or any installed GGUF model).
+     * Automatically discovers the best available model (prioritizing MiniCPM 1B or any installed GGUF model).
      */
     /**
      * Checks if a file has a valid GGUF binary magic header ('GGUF').
@@ -147,6 +147,12 @@ object LocalGgufServerManager {
     suspend fun preloadModel(context: Context? = null, port: Int = DEFAULT_PORT): Boolean {
         val targetFile = withContext(Dispatchers.IO) {
             val ctx = context ?: appContext
+            val selectedModelId = if (ctx != null) {
+                runCatching { com.sednium.kryptonide.data.storage.SettingsStore(ctx).getSelectedPocketModelId() }
+                    .getOrDefault(PocketModels.DEFAULT_MODEL_ID)
+            } else PocketModels.DEFAULT_MODEL_ID
+            val selectedSpec = PocketModels.findCatalogSpec(selectedModelId)
+
             // Check scan directories for valid GGUF models for llama-server
             val dirs = if (ctx != null) {
                 listOf(
@@ -165,10 +171,18 @@ object LocalGgufServerManager {
                 val files = dir.listFiles { f ->
                     f.isFile && f.name.endsWith(".gguf") && !f.name.endsWith(".downloading") && !f.name.endsWith(".tmp") && f.length() > 0 && !f.name.contains("needle")
                 } ?: continue
-                val qwen = files.find { it.name.lowercase().contains("qwen") && isGgufFile(it) }
-                if (qwen != null) return@withContext qwen
+
+                // 1. Check user-selected model
+                if (selectedSpec != null) {
+                    val matchingSelected = files.find { (it.name.contains(selectedSpec.id, ignoreCase = true) || (selectedSpec.downloadUrl != null && it.name.equals(selectedSpec.downloadUrl.substringAfterLast('/'), ignoreCase = true))) && isGgufFile(it) }
+                    if (matchingSelected != null) return@withContext matchingSelected
+                }
+
+                // 2. Default to MiniCPM 1B base model
                 val minicpm = files.find { it.name.lowercase().contains("minicpm") && isGgufFile(it) }
                 if (minicpm != null) return@withContext minicpm
+
+                // 3. Fallback to any valid GGUF model on disk
                 val firstValid = files.firstOrNull { isGgufFile(it) }
                 if (firstValid != null) return@withContext firstValid
             }
@@ -245,12 +259,10 @@ object LocalGgufServerManager {
                 "-m", modelFile.absolutePath,
                 "--host", SERVER_HOST,
                 "--port", port.toString(),
-                "-c", "8192",
-                "--cache-type-k", "q8_0",
-                "--cache-type-v", "q8_0",
+                "-c", "4096",
                 "-t", threads.toString(),
-                "--temp", "0.6",
-                "--repeat-penalty", "1.15"
+                "--temp", "0.3",
+                "--repeat-penalty", "1.12"
             )
 
             if (modelNameLower.contains("minicpm") || modelNameLower.contains("thinking")) {

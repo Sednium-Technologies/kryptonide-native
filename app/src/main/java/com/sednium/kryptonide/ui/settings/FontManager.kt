@@ -40,8 +40,7 @@ class FontManager(application: Application) : AndroidViewModel(application) {
         FontItem("JetBrains Mono", "jetbrainsmono_regular.ttf", false, null),
         FontItem("Fira Code", "firacode_regular.ttf", false, null),
         FontItem("Cascadia Code", "cascadiacode_regular.ttf", false, null),
-        FontItem("Source Code Pro", "sourcecodepro_regular.ttf", false, null),
-        FontItem("Urbanist", "urbanist_regular.ttf", false, null)
+        FontItem("Source Code Pro", "sourcecodepro_regular.ttf", false, null)
     )
 
     private val _fonts = MutableStateFlow<List<FontItem>>(bundledFonts)

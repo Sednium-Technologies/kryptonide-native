@@ -29,7 +29,7 @@ object AiNotificationHelper {
             // Channel A: Silent Ongoing Status for Foreground Service
             val ongoingChannel = NotificationChannel(
                 CHANNEL_ID_ONGOING,
-                "Krypton AI Ongoing Tasks",
+                "Oorty Lite Ongoing Tasks",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Silent ongoing notification while AI is generating"
@@ -42,7 +42,7 @@ object AiNotificationHelper {
             // Channel B: Background Completion Alert (Only when app is in background)
             val completeChannel = NotificationChannel(
                 CHANNEL_ID_COMPLETE,
-                "Krypton AI Task Completion",
+                "Oorty Lite Task Completion",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Heads-up alert when background generation finishes"
@@ -111,7 +111,7 @@ object AiNotificationHelper {
         }
     }
 
-    fun showProgressNotification(context: Context, statusMessage: String = "⚡ Krypton AI is generating...") {
+    fun showProgressNotification(context: Context, statusMessage: String = "Oorty Lite is generating...") {
         if (!hasNotificationPermission(context)) return
         createNotificationChannels(context)
 
@@ -128,7 +128,7 @@ object AiNotificationHelper {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_ONGOING)
             .setSmallIcon(R.drawable.ic_notification_krypton)
-            .setContentTitle("⚡ Krypton AI is generating...")
+            .setContentTitle("Oorty Lite is generating...")
             .setContentText(statusMessage)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
@@ -168,7 +168,7 @@ object AiNotificationHelper {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_COMPLETE)
             .setSmallIcon(R.drawable.ic_notification_krypton)
-            .setContentTitle("✅ Krypton AI finished responding")
+            .setContentTitle("Oorty Lite finished responding")
             .setContentText(previewText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(previewText))
             .setPriority(NotificationCompat.PRIORITY_HIGH)

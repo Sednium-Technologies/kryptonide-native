@@ -19,10 +19,14 @@ data class ActionsRun(
     val html_url: String = "",
     val created_at: String = "",
     val run_number: Int = 0,
+    val name: String = "",
+    val head_branch: String = "",
+    val head_sha: String = "",
+    val updated_at: String = ""
 )
 
-data class ActionsJobStep(val name: String, val status: String, val conclusion: String?)
-data class ActionsJob(val name: String, val status: String, val conclusion: String?, val steps: List<ActionsJobStep>)
+data class ActionsJobStep(val name: String, val status: String, val conclusion: String?, val number: Int = 0)
+data class ActionsJob(val id: Long = 0L, val name: String, val status: String, val conclusion: String?, val steps: List<ActionsJobStep>)
 
 /**
  * Drives GitHub Actions to build an APK in the cloud: commits a workflow
@@ -83,6 +87,8 @@ class GithubActionsRepository(private val client: OkHttpClient = OkHttpClient())
                   # on-device. Using the runner's own Gradle install
                   # sidesteps needing one at all.
                   - uses: gradle/actions/setup-gradle@v4
+                    with:
+                      gradle-version: '8.4'
                   - name: Determine build type
                     id: vars
                     run: echo "type=${'$'}{{ github.event.inputs.build_type || 'debug' }}" >> "${'$'}GITHUB_OUTPUT"
@@ -161,7 +167,7 @@ class GithubActionsRepository(private val client: OkHttpClient = OkHttpClient())
     /** Finds the run started after [afterEpochMillis] — used right after dispatch() to find "our" run. */
     suspend fun findLatestRun(token: String, owner: String, repo: String, afterEpochMillis: Long): ActionsRun? = withContext(Dispatchers.IO) {
         val req = Request.Builder()
-            .url("https://api.github.com/repos/$owner/$repo/actions/workflows/${WORKFLOW_PATH.substringAfterLast('/')}/runs?per_page=5")
+            .url("https://api.github.com/repos/$owner/$repo/actions/workflows/${WORKFLOW_PATH.substringAfterLast('/')}/runs?per_page=10")
             .githubHeaders(token).get().build()
         val resp = client.newCall(req).execute()
         if (!resp.isSuccessful) return@withContext null
@@ -175,9 +181,19 @@ class GithubActionsRepository(private val client: OkHttpClient = OkHttpClient())
                         conclusion = obj["conclusion"]?.jsonPrimitive?.contentOrNull,
                         html_url = obj["html_url"]?.jsonPrimitive?.content ?: "",
                         created_at = obj["created_at"]?.jsonPrimitive?.content ?: "",
-                        run_number = obj["run_number"]?.jsonPrimitive?.int ?: 0
+                        run_number = obj["run_number"]?.jsonPrimitive?.int ?: 0,
+                        name = obj["name"]?.jsonPrimitive?.content ?: "",
+                        head_branch = obj["head_branch"]?.jsonPrimitive?.content ?: "",
+                        head_sha = obj["head_sha"]?.jsonPrimitive?.content ?: "",
+                        updated_at = obj["updated_at"]?.jsonPrimitive?.content ?: ""
                     )
                 }.getOrNull()
+            }
+            .filter { run ->
+                val runEpoch = runCatching {
+                    java.time.Instant.parse(run.created_at).toEpochMilli()
+                }.getOrDefault(0L)
+                runEpoch >= (afterEpochMillis - 30_000L) || run.status != "completed"
             }
             .maxByOrNull { it.run_number }
     }
@@ -194,8 +210,57 @@ class GithubActionsRepository(private val client: OkHttpClient = OkHttpClient())
             conclusion = obj["conclusion"]?.jsonPrimitive?.contentOrNull,
             html_url = obj["html_url"]?.jsonPrimitive?.content ?: "",
             created_at = obj["created_at"]?.jsonPrimitive?.content ?: "",
-            run_number = obj["run_number"]?.jsonPrimitive?.int ?: 0
+            run_number = obj["run_number"]?.jsonPrimitive?.int ?: 0,
+            name = obj["name"]?.jsonPrimitive?.content ?: "",
+            head_branch = obj["head_branch"]?.jsonPrimitive?.content ?: "",
+            head_sha = obj["head_sha"]?.jsonPrimitive?.content ?: "",
+            updated_at = obj["updated_at"]?.jsonPrimitive?.content ?: ""
         )
+    }
+
+    suspend fun listRecentRuns(token: String, owner: String, repo: String, perPage: Int = 10): List<ActionsRun> = withContext(Dispatchers.IO) {
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/runs?per_page=$perPage")
+            .githubHeaders(token).get().build()
+        val resp = client.newCall(req).execute()
+        if (!resp.isSuccessful) return@withContext emptyList()
+        val runs = json.parseToJsonElement(resp.body!!.string()).jsonObject["workflow_runs"]?.jsonArray ?: return@withContext emptyList()
+        runs.mapNotNull { elem ->
+            runCatching {
+                val obj = elem.jsonObject
+                ActionsRun(
+                    id = obj["id"]!!.jsonPrimitive.long,
+                    status = obj["status"]!!.jsonPrimitive.content,
+                    conclusion = obj["conclusion"]?.jsonPrimitive?.contentOrNull,
+                    html_url = obj["html_url"]?.jsonPrimitive?.content ?: "",
+                    created_at = obj["created_at"]?.jsonPrimitive?.content ?: "",
+                    run_number = obj["run_number"]?.jsonPrimitive?.int ?: 0,
+                    name = obj["name"]?.jsonPrimitive?.content ?: "",
+                    head_branch = obj["head_branch"]?.jsonPrimitive?.content ?: "",
+                    head_sha = obj["head_sha"]?.jsonPrimitive?.content ?: "",
+                    updated_at = obj["updated_at"]?.jsonPrimitive?.content ?: ""
+                )
+            }.getOrNull()
+        }
+    }
+
+    suspend fun cancelRun(token: String, owner: String, repo: String, runId: Long): Boolean = withContext(Dispatchers.IO) {
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/runs/$runId/cancel")
+            .githubHeaders(token).post("{}".toRequestBody(JSON_TYPE)).build()
+        val resp = client.newCall(req).execute()
+        resp.isSuccessful
+    }
+
+    suspend fun getJobLogs(token: String, owner: String, repo: String, jobId: Long): String = withContext(Dispatchers.IO) {
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/jobs/$jobId/logs")
+            .githubHeaders(token)
+            .get().build()
+        val redirectClient = client.newBuilder().followRedirects(true).build()
+        val resp = redirectClient.newCall(req).execute()
+        if (!resp.isSuccessful) return@withContext "Log output unavailable (HTTP ${resp.code})"
+        resp.body?.string() ?: ""
     }
 
     suspend fun getJobs(token: String, owner: String, repo: String, runId: Long): List<ActionsJob> = withContext(Dispatchers.IO) {
@@ -206,15 +271,17 @@ class GithubActionsRepository(private val client: OkHttpClient = OkHttpClient())
         if (!resp.isSuccessful) return@withContext emptyList()
         val jobsArr = json.parseToJsonElement(resp.body!!.string()).jsonObject["jobs"]?.jsonArray ?: return@withContext emptyList()
         jobsArr.map { it.jsonObject }.map { obj ->
-            val steps = obj["steps"]?.jsonArray?.map { s ->
+            val steps = obj["steps"]?.jsonArray?.mapIndexed { idx, s ->
                 val so = s.jsonObject
                 ActionsJobStep(
                     name = so["name"]?.jsonPrimitive?.content ?: "",
                     status = so["status"]?.jsonPrimitive?.content ?: "",
-                    conclusion = so["conclusion"]?.jsonPrimitive?.contentOrNull
+                    conclusion = so["conclusion"]?.jsonPrimitive?.contentOrNull,
+                    number = so["number"]?.jsonPrimitive?.int ?: (idx + 1)
                 )
             } ?: emptyList()
             ActionsJob(
+                id = obj["id"]?.jsonPrimitive?.long ?: 0L,
                 name = obj["name"]?.jsonPrimitive?.content ?: "",
                 status = obj["status"]?.jsonPrimitive?.content ?: "",
                 conclusion = obj["conclusion"]?.jsonPrimitive?.contentOrNull,

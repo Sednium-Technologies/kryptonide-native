@@ -2,7 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="cache" path="." />
     <external-cache-path name="external_cache" path="." />
-    <external-path name="external" path="." />
     <external-path name="krypton_projects" path="Kryptonide/" />
     <external-path name="legacy_krypton_projects" path="KryptonIDE/" />
 </paths>

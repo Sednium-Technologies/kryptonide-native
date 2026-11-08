@@ -24,3 +24,6 @@ local.properties
 *.log
 *.hprof
 *.tmp
+*.mp4
+.agents/
+graphify-out/

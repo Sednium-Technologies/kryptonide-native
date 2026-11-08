@@ -35,8 +35,8 @@ data class ProviderConfig(
 val LARRY_PROVIDERS = listOf(
     ProviderConfig(
         id = "pocket", name = "Pocket Server (Local)", placeholder = "Localhost inference (no key needed)",
-        defaultModel = "needle-3-q4", baseUrl = "http://127.0.0.1:8765/v1",
-        models = listOf("needle-3-q4", "laya-s1-q4", "minicpm5-1b-thinking-q4", "qwen2.5-coder-1.5b-q4", "gemma-2-2b-q4", "qwen2.5-coder-7b-q4"),
+        defaultModel = "minicpm5-1b-thinking-q4", baseUrl = "http://127.0.0.1:8765/v1",
+        models = listOf("minicpm5-1b-thinking-q4", "qwen2.5-coder-1.5b-q4", "qwen2.5-coder-0.5b-q4", "llama-3.2-1b-instruct-q4"),
         modelsEndpoint = "/models",
         docsUrl = "https://github.com/Sednium-Technologies/OORTY",
         usesBearerAuth = false

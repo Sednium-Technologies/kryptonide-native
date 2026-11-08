@@ -36,6 +36,10 @@ object AgentToolRegistry {
         tools.remove(name)
     }
 
+    fun clear() {
+        tools.clear()
+    }
+
     fun getTool(name: String): ToolDefinition? = tools[name]
 
     fun listTools(): List<ToolDefinition> = tools.values.toList()
@@ -146,5 +150,42 @@ object AgentToolRegistry {
                 }
             }
         }
+    }
+
+    /**
+     * Dynamically generates the JSON schema string representing all registered tools.
+     * Zero hardcoded arrays — automatically includes any dynamically added tool.
+     */
+    fun getToolsForPrompt(): String {
+        val currentTools = listTools()
+        if (currentTools.isEmpty()) return "[]"
+        return buildJsonArray {
+            currentTools.forEach { tool ->
+                addJsonObject {
+                    put("type", "function")
+                    put("function", buildJsonObject {
+                        put("name", tool.name)
+                        put("description", tool.description)
+                        put("parameters", buildJsonObject {
+                            put("type", "object")
+                            put("properties", buildJsonObject {
+                                tool.parameters.forEach { p ->
+                                    put(p.name, buildJsonObject {
+                                        put("type", p.type)
+                                        put("description", p.description)
+                                        p.enumValues?.let { ev ->
+                                            put("enum", buildJsonArray { ev.forEach { add(it) } })
+                                        }
+                                    })
+                                }
+                            })
+                            put("required", buildJsonArray {
+                                tool.parameters.filter { it.required }.forEach { add(it.name) }
+                            })
+                        })
+                    })
+                }
+            }
+        }.toString()
     }
 }

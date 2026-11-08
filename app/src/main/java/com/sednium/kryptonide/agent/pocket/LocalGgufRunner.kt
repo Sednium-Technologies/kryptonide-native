@@ -148,10 +148,11 @@ class LocalGgufRunner(private val context: Context? = null) {
             }
         }
 
-        fun formatFullPrompt(systemPrompt: String, userPrompt: String): String {
+        fun formatFullPrompt(systemPrompt: String, userPrompt: String, toolsJson: String? = null): String {
             return MiniCpmToolParser.formatPromptWithTools(
                 systemInstruction = systemPrompt,
-                userQuery = userPrompt
+                userQuery = userPrompt,
+                toolsJson = toolsJson
             )
         }
     }

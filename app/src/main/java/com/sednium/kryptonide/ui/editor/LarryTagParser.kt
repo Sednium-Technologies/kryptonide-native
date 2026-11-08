@@ -22,6 +22,7 @@ object LarryTagParser {
                 is OortyBlock.Status -> LarryBlock.Status(b.text)
                 is OortyBlock.Edit -> LarryBlock.Edit(b.file, b.content)
                 is OortyBlock.AifNote -> LarryBlock.Status("AIF Memory [Imp: ${b.importance}]: ${b.summary}")
+                is OortyBlock.ToolCall -> LarryBlock.Status("Calling tool: ${b.name}")
             }
         }
     }

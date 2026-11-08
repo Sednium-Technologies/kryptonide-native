@@ -54,6 +54,8 @@ class StorageModelScanner(private val context: Context? = null) {
             for (f in files) {
                 if (f.isDirectory) continue
                 val nameLower = f.name.lowercase()
+                // Deprecated legacy models filter: keep only MiniCPM base brain and user GGUFs (never show needle or lfm)
+                if (nameLower.contains("needle") || nameLower.contains("lfm") || nameLower.endsWith(".cact")) continue
                 val format = when {
                     nameLower.endsWith(".cact") -> ModelFormat.CACT
                     nameLower.endsWith(".gguf") -> ModelFormat.GGUF

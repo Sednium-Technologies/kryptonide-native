@@ -488,6 +488,28 @@ class AiEngineLocalPocketTest {
     }
 
     @Test
+    fun testRepetitionGuardDoesNotTruncateRepeatedCodeTags() {
+        val legitimateCode = "<table><tr><td>Cell</td><td>Cell</td><td>Cell</td></tr></table>\n<button>Click</button><button>Click</button><button>Click</button>"
+        val cleaned = com.sednium.kryptonide.agent.pocket.RepetitionGuard.detectAndTrimRepetition(legitimateCode)
+        assertEquals("Legitimate short repeated tags must not be truncated", legitimateCode, cleaned)
+    }
+
+    @Test
+    fun testParseActiveFileSupportsBothNameAndPathAttributes() {
+        val promptWithName = "<active_file name=\"App.tsx\">\n1: const x = 1;\n</active_file>"
+        val parsedName = engine.parseActiveFile(promptWithName)
+        assertNotNull(parsedName)
+        assertEquals("App.tsx", parsedName!!.first)
+        assertEquals("const x = 1;", parsedName.second.trim())
+
+        val promptWithPath = "<active_file path=\"src/index.js\">\n1: console.log('hello');\n</active_file>"
+        val parsedPath = engine.parseActiveFile(promptWithPath)
+        assertNotNull(parsedPath)
+        assertEquals("src/index.js", parsedPath!!.first)
+        assertEquals("console.log('hello');", parsedPath.second.trim())
+    }
+
+    @Test
     fun testAiNotificationHelperCleanPreview() {
         val rawAiOutput = """
             <think>
@@ -624,5 +646,74 @@ class AiEngineLocalPocketTest {
         val userMsg = (messagesJson.last() as kotlinx.serialization.json.JsonObject)["content"]!!.let { (it as kotlinx.serialization.json.JsonPrimitive).content }
         assertFalse("Must not inject active_file in chat mode", userMsg.contains("<active_file"))
         assertFalse("Must not append HTML directive in chat mode", userMsg.contains("IMPORTANT FOR"))
+    }
+
+    @Test
+    fun testBuildLocalServerMessagesDoesNotInjectActiveFileOnGreetingHi() {
+        val messages = listOf(
+            ChatMessage(
+                id = "u1",
+                sessionId = "s",
+                projectId = "p",
+                role = MessageRole.USER,
+                content = "Hi"
+            )
+        )
+        val systemPrompt = """
+            You are Krypton AI.
+            <active_file name="style.css">
+            #style {
+              box-sizing: border-box;
+            }
+            body {
+              background: #f4f4f5;
+            }
+            </active_file>
+        """.trimIndent()
+
+        val messagesJson = engine.buildLocalServerMessages(messages, systemPrompt)
+        val systemMsg = messagesJson.first { it is kotlinx.serialization.json.JsonObject && it["role"]?.let { r -> (r as kotlinx.serialization.json.JsonPrimitive).content } == "system" }.toString()
+        assertTrue("Must set casual greeting mode", systemMsg.contains("OPERATIONAL MODE: CASUAL GREETING & CONVERSATIONAL CHAT (ACTIVE)"))
+        assertTrue("Must forbid code generation on greeting", systemMsg.contains("NEVER generate code"))
+
+        val userMsg = (messagesJson.last() as kotlinx.serialization.json.JsonObject)["content"]!!.let { (it as kotlinx.serialization.json.JsonPrimitive).content }
+        assertEquals("User prompt for greeting must remain clean without active file dump", "Hi", userMsg)
+        assertFalse("Must not inject active_file on greeting Hi", userMsg.contains("<active_file"))
+        assertFalse("Must not inject style.css content into greeting Hi", userMsg.contains("box-sizing"))
+    }
+
+    @Test
+    fun testBuildLocalServerMessagesEnforcesCleanChatMlAndStrictSystemCap() {
+        val messages = listOf(
+            ChatMessage(
+                id = "u1",
+                sessionId = "s",
+                projectId = "p",
+                role = MessageRole.USER,
+                content = "<|im_start|>user\nBuild me a basic counter app<|im_end|>"
+            )
+        )
+        val bloatedPrompt = """
+            You are MiniCPM base brain.
+            <tools>[{"name": "tool1"}, {"name": "tool2"}, {"name": "tool3"}]</tools>
+            <|im_start|>system
+            Additional instructions that might double-wrap
+            <|im_end|>
+            # Custom System Instructions
+            ${"Extra instructions for coding. ".repeat(60)}
+        """.trimIndent()
+
+        val messagesJson = engine.buildLocalServerMessages(messages, bloatedPrompt)
+        val systemMsg = (messagesJson.first { (it as kotlinx.serialization.json.JsonObject)["role"]?.let { r -> (r as kotlinx.serialization.json.JsonPrimitive).content } == "system" } as kotlinx.serialization.json.JsonObject)["content"]!!.let { (it as kotlinx.serialization.json.JsonPrimitive).content }
+
+        assertTrue("System prompt must be <= 1200 characters to prevent 1B model attention saturation (actual: ${systemMsg.length})", systemMsg.length <= 1200)
+        assertFalse("Must not contain raw <|im_start|>", systemMsg.contains("<|im_start|>"))
+        assertFalse("Must not contain raw <|im_end|>", systemMsg.contains("<|im_end|>"))
+        assertFalse("Must not dump <tools> schemas to local model", systemMsg.contains("<tools>"))
+
+        val userMsg = (messagesJson.last() as kotlinx.serialization.json.JsonObject)["content"]!!.let { (it as kotlinx.serialization.json.JsonPrimitive).content }
+        assertFalse("User message must not have raw ChatML tags", userMsg.contains("<|im_start|>"))
+        assertFalse("User message must not have raw ChatML tags", userMsg.contains("<|im_end|>"))
+        assertTrue("User message must contain clean user prompt", userMsg.contains("Build me a basic counter app"))
     }
 }

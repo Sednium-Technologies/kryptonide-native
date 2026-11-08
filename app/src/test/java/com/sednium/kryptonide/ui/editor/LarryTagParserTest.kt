@@ -257,4 +257,109 @@ class LarryTagParserTest {
         val result = PatchApplier.applyCodeOrPatch(existing, brandNew)
         assertEquals(brandNew, result)
     }
+
+    @Test
+    fun testMismatchedThinkingAndThinkCloseTags() {
+        // <think> closed with </thinking>
+        val b1 = LarryTagParser.parse("<think>Reasoning A</thinking><ans>Ans A</ans>")
+        assertEquals(2, b1.size)
+        assertTrue(b1[0] is LarryBlock.Thinking)
+        assertEquals("Reasoning A", (b1[0] as LarryBlock.Thinking).text)
+        assertTrue(b1[1] is LarryBlock.Ans)
+        assertEquals("Ans A", (b1[1] as LarryBlock.Ans).text)
+
+        // <thinking> closed with </think>
+        val b2 = LarryTagParser.parse("<thinking>Reasoning B</think><ans>Ans B</ans>")
+        assertEquals(2, b2.size)
+        assertTrue(b2[0] is LarryBlock.Thinking)
+        assertEquals("Reasoning B", (b2[0] as LarryBlock.Thinking).text)
+        assertTrue(b2[1] is LarryBlock.Ans)
+        assertEquals("Ans B", (b2[1] as LarryBlock.Ans).text)
+    }
+
+    @Test
+    fun testEditTagWithSingleQuotesAndPathAttribute() {
+        val raw = """
+            <edit path='src/components/Header.vue'>
+            <template>
+              <h1>Header</h1>
+            </template>
+            </edit>
+        """.trimIndent()
+        val blocks = LarryTagParser.parse(raw)
+        assertEquals(1, blocks.size)
+        assertTrue(blocks[0] is LarryBlock.Edit)
+        val edit = blocks[0] as LarryBlock.Edit
+        assertEquals("src/components/Header.vue", edit.file)
+        assertTrue(edit.content.contains("<h1>Header</h1>"))
+    }
+
+    @Test
+    fun testEditBlockWithEmbeddedHtmlTagsDoesNotPrematurelyClose() {
+        val raw = """
+            <edit file="index.html">
+            <!DOCTYPE html>
+            <html>
+              <head><title>App</title></head>
+              <body>
+                <div>
+                  <status>Online</status>
+                  <p>Testing nested tags</p>
+                </div>
+              </body>
+            </html>
+            </edit>
+        """.trimIndent()
+        val blocks = LarryTagParser.parse(raw)
+        assertEquals(1, blocks.size)
+        assertTrue(blocks[0] is LarryBlock.Edit)
+        val edit = blocks[0] as LarryBlock.Edit
+        assertEquals("index.html", edit.file)
+        assertTrue(edit.content.contains("<status>Online</status>"))
+        assertTrue(edit.content.contains("<p>Testing nested tags</p>"))
+    }
+
+    @Test
+    fun testToolCallTagWithAttribute() {
+        val raw = """
+            <think>Need to push files to repo</think>
+            <tool_call name="github_push">{"commit_message": "Fix UI"}</tool_call>
+            <ans>Commits pushed!</ans>
+        """.trimIndent()
+        val blocks = LarryTagParser.parse(raw)
+        assertEquals(3, blocks.size)
+        assertTrue(blocks[0] is LarryBlock.Thinking)
+        assertTrue(blocks[1] is LarryBlock.Status)
+        assertEquals("Calling tool: github_push", (blocks[1] as LarryBlock.Status).text)
+        assertTrue(blocks[2] is LarryBlock.Ans)
+        assertEquals("Commits pushed!", (blocks[2] as LarryBlock.Ans).text)
+    }
+
+    @Test
+    fun testToolCallTagWithJsonBody() {
+        val raw = """
+            <tool_call>
+            {"name": "web_search", "arguments": {"query": "kotlin flows"}}
+            </tool_call>
+        """.trimIndent()
+        val blocks = LarryTagParser.parse(raw)
+        assertEquals(1, blocks.size)
+        assertTrue(blocks[0] is LarryBlock.Status)
+        assertEquals("Calling tool: web_search", (blocks[0] as LarryBlock.Status).text)
+    }
+
+    @Test
+    fun testStreamingUnclosedPlanAndStatusTags() {
+        val planStream = "<plan>\n1. Setup database\n2. Configure routes"
+        val planBlocks = LarryTagParser.parse(planStream)
+        assertEquals(1, planBlocks.size)
+        assertTrue(planBlocks[0] is LarryBlock.Plan)
+        assertEquals("1. Setup database\n2. Configure routes", (planBlocks[0] as LarryBlock.Plan).text)
+
+        val statusStream = "<status>Building project artifacts..."
+        val statusBlocks = LarryTagParser.parse(statusStream)
+        assertEquals(1, statusBlocks.size)
+        assertTrue(statusBlocks[0] is LarryBlock.Status)
+        assertEquals("Building project artifacts...", (statusBlocks[0] as LarryBlock.Status).text)
+    }
 }

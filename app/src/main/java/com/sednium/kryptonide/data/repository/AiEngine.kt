@@ -346,7 +346,7 @@ class AiEngine {
                     put("contents", buildGeminiContents(messages))
                     put("generationConfig", buildJsonObject {
                         put("maxOutputTokens", 8192)
-                        put("temperature", 0.2)
+                        put("temperature", 0.5)
                         put("topP", 0.95)
                     })
                     put("tools", buildJsonArray {
@@ -500,55 +500,68 @@ class AiEngine {
     fun formatLocalPocketPrompt(
         systemPrompt: String,
         messages: List<ChatMessage>,
-        maxTotalChars: Int = 1400
+        maxTotalChars: Int = 16000
     ): String {
         return buildString {
-            // 1. Ultra-short on-device system instruction (fast prefill, avoids long monologue)
+            // 1. Dynamic System Instruction: Always use the passed systemPrompt (zero hardcoding)
+            val maxSysBudget = (maxTotalChars / 2).coerceAtLeast(300)
+            val baseSys = systemPrompt.trim().ifBlank {
+                "You are an on-device coding assistant. Answer accurately and concisely in Markdown."
+            }
+            val sysText = if (baseSys.length > maxSysBudget) {
+                baseSys.take(maxSysBudget).trim()
+            } else {
+                baseSys
+            }
             append("<|im_start|>system\n")
-            append("You are Krypton AI, an on-device coding assistant. Answer concisely in Markdown. Avoid internal monologue.")
+            append(sysText)
             append("\n<|im_end|>\n")
 
-            // 2. Budget characters for latest user message & context under n_batch = 512
-            val userMessages = messages.filter { it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT }
-            val lastUser = userMessages.lastOrNull { it.role == MessageRole.USER }
+            // 2. Budget characters for latest user/tool message & context
+            val userMessages = messages.filter { it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT || it.role == MessageRole.TOOL }
+            val lastTurn = userMessages.lastOrNull { it.role == MessageRole.USER || it.role == MessageRole.TOOL }
 
             val currentBudget = (maxTotalChars - length - 40).coerceAtLeast(300)
-            if (lastUser != null) {
-                val rawContent = lastUser.content
-                val activeFileRegex = Regex("""<active_file[\s\S]*?<\/active_file>""", RegexOption.IGNORE_CASE)
-                val taggedFilesRegex = Regex("""<tagged_files>[\s\S]*?<\/tagged_files>""", RegexOption.IGNORE_CASE)
-
-                val activeFileMatch = activeFileRegex.find(rawContent)?.value
-                val taggedFilesMatch = taggedFilesRegex.find(rawContent)?.value
-
-                // The pure user query with file wrappers stripped
-                val pureQuery = rawContent
-                    .replace(activeFileRegex, "")
-                    .replace(taggedFilesRegex, "")
-                    .trim()
-
-                val cappedQuery = if (pureQuery.length > 500) pureQuery.take(500) else pureQuery
-
-                val fileBudget = (currentBudget - cappedQuery.length - 60).coerceIn(0, 500)
-                val fileContext = when {
-                    activeFileMatch != null -> {
-                        val fileName = Regex("""name="([^"]*)"""").find(activeFileMatch)?.groupValues?.get(1) ?: "file"
-                        val inner = activeFileMatch.substringAfter('>', "").substringBeforeLast("</active_file>", "").trim()
-                        val snippet = if (inner.length > fileBudget) inner.take(fileBudget) + "\n... [truncated]" else inner
-                        if (snippet.isNotBlank()) "<active_file name=\"$fileName\">\n$snippet\n</active_file>" else ""
-                    }
-                    taggedFilesMatch != null -> {
-                        val inner = taggedFilesMatch.substringAfter('>', "").substringBeforeLast("</tagged_files>", "").trim()
-                        val snippet = if (inner.length > fileBudget) inner.take(fileBudget) + "\n... [truncated]" else inner
-                        if (snippet.isNotBlank()) "<tagged_files>\n$snippet\n</tagged_files>" else ""
-                    }
-                    else -> ""
-                }
-
-                val finalUserTurn = if (fileContext.isNotBlank()) {
-                    "$fileContext\n\n$cappedQuery"
+            if (lastTurn != null) {
+                val finalUserTurn = if (lastTurn.role == MessageRole.TOOL) {
+                    "<tool_response>\n${lastTurn.content.trim()}\n</tool_response>"
                 } else {
-                    cappedQuery
+                    val rawContent = lastTurn.content
+                    val activeFileRegex = Regex("""<active_file[\s\S]*?<\/active_file>""", RegexOption.IGNORE_CASE)
+                    val taggedFilesRegex = Regex("""<tagged_files>[\s\S]*?<\/tagged_files>""", RegexOption.IGNORE_CASE)
+
+                    val activeFileMatch = activeFileRegex.find(rawContent)?.value
+                    val taggedFilesMatch = taggedFilesRegex.find(rawContent)?.value
+
+                    // The pure user query with file wrappers stripped
+                    val pureQuery = rawContent
+                        .replace(activeFileRegex, "")
+                        .replace(taggedFilesRegex, "")
+                        .trim()
+
+                    val cappedQuery = if (pureQuery.length > 500) pureQuery.take(500) else pureQuery
+
+                    val fileBudget = (currentBudget - cappedQuery.length - 60).coerceIn(0, 500)
+                    val fileContext = when {
+                        activeFileMatch != null -> {
+                            val fileName = Regex("""name="([^"]*)"""").find(activeFileMatch)?.groupValues?.get(1) ?: "file"
+                            val inner = activeFileMatch.substringAfter('>', "").substringBeforeLast("</active_file>", "").trim()
+                            val snippet = if (inner.length > fileBudget) inner.take(fileBudget) + "\n... [truncated]" else inner
+                            if (snippet.isNotBlank()) "<active_file name=\"$fileName\">\n$snippet\n</active_file>" else ""
+                        }
+                        taggedFilesMatch != null -> {
+                            val inner = taggedFilesMatch.substringAfter('>', "").substringBeforeLast("</tagged_files>", "").trim()
+                            val snippet = if (inner.length > fileBudget) inner.take(fileBudget) + "\n... [truncated]" else inner
+                            if (snippet.isNotBlank()) "<tagged_files>\n$snippet\n</tagged_files>" else ""
+                        }
+                        else -> ""
+                    }
+
+                    if (fileContext.isNotBlank()) {
+                        "$fileContext\n\n$cappedQuery"
+                    } else {
+                        cappedQuery
+                    }
                 }
 
                 // If budget allows, include previous assistant turn
@@ -565,7 +578,7 @@ class AiEngine {
                 append("<|im_end|>\n")
             }
 
-            append("<|im_start|>assistant\n")
+            append("<|im_start|>assistant\n<think>\n")
         }.take(maxTotalChars)
     }
 
@@ -606,7 +619,7 @@ class AiEngine {
 
         // Filter valid conversational turns (exclude system/blank)
         val convMessages = messages.filter {
-            (it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT) && it.content.isNotBlank()
+            (it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT || it.role == MessageRole.TOOL) && it.content.isNotBlank()
         }
 
         if (convMessages.isEmpty()) {
@@ -632,7 +645,13 @@ class AiEngine {
         val taggedFilesBlock = taggedFilesInUser ?: taggedFilesInSys
 
         val lowerQuery = pureLastQuery.lowercase().trim()
-        val isChatQuestion = listOf(
+        val isGreetingOrCasual = listOf(
+            "hello", "hi", "hey", "who are you", "what are you", "what can you do",
+            "thanks", "thank you", "ok", "okay", "cool", "nice", "awesome",
+            "good morning", "good evening", "good afternoon"
+        ).any { lowerQuery == it || lowerQuery.startsWith("$it ") || lowerQuery.startsWith("$it!") || lowerQuery.startsWith("$it.") || lowerQuery.startsWith("$it,") }
+
+        val isChatQuestion = isGreetingOrCasual || listOf(
             "why", "how", "what", "where", "who", "when", "can you explain",
             "explain", "describe", "tell me", "help me understand", "hello", "hi", "hey",
             "thanks", "thank you", "ok", "okay", "cool", "nice", "awesome",
@@ -640,18 +659,18 @@ class AiEngine {
             "how do", "how does", "how can", "is there", "do you", "can i"
         ).any { lowerQuery.startsWith(it) || lowerQuery == it || lowerQuery.startsWith("$it ") || lowerQuery.endsWith("?") }
 
-        val isCreateRequest = listOf(
+        val isCreateRequest = !isGreetingOrCasual && listOf(
             "make a", "create a", "build a", "design a", "write a",
             "new website", "new app", "from scratch", "generate a",
             "make website", "create website", "build website",
             "make app", "create app", "build app"
         ).any { pureLastQuery.contains(it, ignoreCase = true) }
 
-        val isExplicitCodeAction = isCreateRequest || listOf(
+        val isExplicitCodeAction = isCreateRequest || (!isGreetingOrCasual && listOf(
             "fix the", "fix bug", "fix error", "change the", "update the", "modify the",
             "refactor the", "patch the", "add a", "remove the", "delete the", "replace the",
             "implement", "tweak the", "style the"
-        ).any { lowerQuery.contains(it) }
+        ).any { lowerQuery.contains(it) })
 
         val isCodeRequest = isExplicitCodeAction && (!isChatQuestion || listOf("make", "create", "build", "write", "fix", "change", "update", "add").any { lowerQuery.startsWith(it) })
 
@@ -659,21 +678,34 @@ class AiEngine {
             Regex("""(?:name|path)="([^"]*)"""").find(activeFileBlock)?.groupValues?.get(1)
         } else null
 
-        val isFileReferenced = (rawFileName != null && lowerQuery.contains(rawFileName.lowercase())) ||
+        val isFileReferenced = !isGreetingOrCasual && ((rawFileName != null && lowerQuery.contains(rawFileName.lowercase())) ||
                 lowerQuery.contains("this file") || lowerQuery.contains("the file") ||
                 lowerQuery.contains("this code") || lowerQuery.contains("the code") ||
-                lowerQuery.contains("style") || lowerQuery.contains("css")
+                lowerQuery.contains("style.css") || lowerQuery.contains("index.html") || lowerQuery.contains("script.js"))
 
-        val shouldIncludeActiveFile = activeFileInUser != null || isCodeRequest || isFileReferenced
+        val shouldIncludeActiveFile = !isGreetingOrCasual && (
+            (activeFileInUser != null && !isChatQuestion) || isCodeRequest || isFileReferenced
+        )
 
         val targetFileName = rawFileName ?: if (pureLastQuery.contains("website", ignoreCase = true) || pureLastQuery.contains("html", ignoreCase = true) || pureLastQuery.contains("calculator", ignoreCase = true)) "index.html" else "index.html"
         val isHtmlTarget = (rawFileName ?: targetFileName).endsWith(".html", ignoreCase = true)
         val isHtmlCreateRequest = isCodeRequest && isCreateRequest && isHtmlTarget
 
-        // 1. Master System Prompt: Adaptive Mode (Chat vs Code)
+        // 1. Dynamic Master System Prompt: Adaptive Mode (Chat vs Code) using caller systemPrompt
         val compactSystemText = buildString {
-            append("You are Krypton AI, an elite software engineer and creative UI designer built into Kryptonide.\n\n")
-            if (!isCodeRequest) {
+            val base = systemPrompt.substringBefore("# Custom System Instructions")
+                .substringBefore("<project_file_tree>")
+                .substringBefore("<active_file")
+                .trim()
+                .ifBlank { "You are an on-device AI coding assistant." }
+            append(base).append("\n\n")
+
+            if (isGreetingOrCasual) {
+                append("## OPERATIONAL MODE: CASUAL GREETING & CONVERSATIONAL CHAT (ACTIVE)\n")
+                append("- The user sent a casual greeting or friendly remark. Greet them back politely, warmly, and concisely.\n")
+                append("- Ask how you can assist them with their code or project.\n")
+                append("- STRICT INVARIANT: NEVER generate code, <edit file=\"...\">, or modify any file on a simple greeting!\n\n")
+            } else if (!isCodeRequest) {
                 append("## OPERATIONAL MODE: CONVERSATIONAL CHAT (ACTIVE)\n")
                 append("- The user is asking a question, discussing concepts, or chatting. You MUST respond in pure Markdown prose.\n")
                 append("- STRICT RULE: NEVER output <edit file=\"...\"> or <patch file=\"...\"> tags. NEVER overwrite or modify any file in chat mode!\n")
@@ -729,9 +761,19 @@ class AiEngine {
             }
         }
 
+        val cleanSystemText = compactSystemText
+            .replace(Regex("""<tools>[\s\S]*?<\/tools>""", RegexOption.IGNORE_CASE), "")
+            .replace("<|im_start|>", "")
+            .replace("<|im_end|>", "")
+            .replace("<|im_sep|>", "")
+            .trim()
+        val finalSystemText = if (cleanSystemText.length > 1200) {
+            cleanSystemText.take(1197) + "..."
+        } else cleanSystemText
+
         addJsonObject {
             put("role", "system")
-            put("content", compactSystemText)
+            put("content", finalSystemText)
         }
 
         // Up to the last 2 prior turns (at most 4 messages prior to the latest message)
@@ -747,12 +789,20 @@ class AiEngine {
                 .replace(thinkRegex, "")
                 .replace(activeFileRegex, "")
                 .replace(taggedFilesRegex, "")
+                .replace("<|im_start|>", "")
+                .replace("<|im_end|>", "")
+                .replace("<|im_sep|>", "")
                 .trim()
             if (cleaned.isNotBlank()) {
-                val capped = if (cleaned.length > 80) cleaned.take(80) + "..." else cleaned
+                val capped = if (cleaned.length > 250) cleaned.take(250) + "..." else cleaned
                 addJsonObject {
-                    put("role", if (prior.role == MessageRole.USER) "user" else "assistant")
-                    put("content", capped)
+                    if (prior.role == MessageRole.TOOL) {
+                        put("role", "user")
+                        put("content", "<tool_response>\n$capped\n</tool_response>")
+                    } else {
+                        put("role", if (prior.role == MessageRole.USER) "user" else "assistant")
+                        put("content", capped)
+                    }
                 }
             }
         }
@@ -793,10 +843,20 @@ class AiEngine {
         val cappedBaseQuery = if (baseQuery.length > maxQueryLen) baseQuery.take(maxQueryLen) + "..." else baseQuery
 
         val finalLatestContent = (cappedBaseQuery + extraPayload).take(totalCap)
+            .replace("<|im_start|>", "")
+            .replace("<|im_end|>", "")
+            .replace("<|im_sep|>", "")
 
-        addJsonObject {
-            put("role", if (lastMsg.role == MessageRole.USER) "user" else "assistant")
-            put("content", finalLatestContent)
+        if (lastMsg.role == MessageRole.TOOL) {
+            addJsonObject {
+                put("role", "user")
+                put("content", "<tool_response>\n${lastMsg.content.trim()}\n</tool_response>")
+            }
+        } else {
+            addJsonObject {
+                put("role", if (lastMsg.role == MessageRole.USER) "user" else "assistant")
+                put("content", finalLatestContent)
+            }
         }
     }
 
@@ -820,9 +880,10 @@ class AiEngine {
             put("model", model)
             put("stream", true)
             put("max_tokens", 4096)
-            put("temperature", 0.6)
+            put("temperature", 0.3)
             put("top_p", 0.9)
-            put("repeat_penalty", 1.15)
+            put("top_k", 40)
+            put("repeat_penalty", 1.12)
             put("repeat_last_n", 64)
             put("messages", buildLocalServerMessages(messages, systemPrompt))
         }
@@ -970,9 +1031,10 @@ class AiEngine {
                 put("model", model)
                 put("stream", true)
                 put("max_tokens", 4096)
-                put("temperature", 0.6)
+                put("temperature", 0.3)
                 put("top_p", 0.9)
-                put("repeat_penalty", 1.15)
+                put("top_k", 40)
+                put("repeat_penalty", 1.12)
                 put("repeat_last_n", 64)
                 put("messages", buildLocalServerMessages(continuationMessages, systemPrompt))
             }
@@ -1090,67 +1152,10 @@ class AiEngine {
         val activeModel = discovered.firstOrNull {
             it.name.lowercase(java.util.Locale.ROOT).contains(cleanQuery) ||
             it.matchedCatalogSpec?.id?.lowercase(java.util.Locale.ROOT)?.contains(cleanQuery) == true
+        } ?: discovered.firstOrNull {
+            it.name.lowercase(java.util.Locale.ROOT).contains("minicpm") ||
+            it.matchedCatalogSpec?.id?.lowercase(java.util.Locale.ROOT)?.contains("minicpm") == true
         } ?: discovered.firstOrNull()
-
-        // Handle Needle-3 System-1 Tool Engine gracefully (tool engine, not a llama-server GGUF)
-        val isNeedle = cleanQuery.contains("needle") || activeModel?.name?.lowercase(java.util.Locale.ROOT)?.contains("needle") == true
-        if (isNeedle) {
-            val canRunServer = com.sednium.kryptonide.agent.pocket.LocalGgufServerManager.findServerBinary() != null
-            val ggufChatModel = if (canRunServer) {
-                discovered.firstOrNull {
-                    it.matchedCatalogSpec?.id != "needle-3-q4" &&
-                    !it.name.lowercase(java.util.Locale.ROOT).contains("needle") &&
-                    com.sednium.kryptonide.agent.pocket.LocalGgufServerManager.isGgufFile(it.file)
-                }
-            } else null
-            if (ggufChatModel != null) {
-                streamOnDevicePocketChat(ggufChatModel.name, systemPrompt, messages).collect { emit(it) }
-                return@flow
-            }
-
-            val lastUserPrompt = messages.lastOrNull { it.role == MessageRole.USER }?.content ?: ""
-            val activePair = parseActiveFile(systemPrompt)
-            val taggedMap = parseTaggedFiles(systemPrompt)
-            val targetFile = findFileNameInText(lastUserPrompt)
-                ?: activePair?.first
-                ?: taggedMap.keys.firstOrNull()
-
-            val isCodeRequest = lastUserPrompt.lowercase(java.util.Locale.ROOT).let { p ->
-                p.contains("fix") || p.contains("edit") || p.contains("create") ||
-                p.contains("build") || p.contains("write") || p.contains("code") ||
-                p.contains("implement") || p.contains("update") || p.contains("add")
-            }
-
-            if (targetFile != null && isCodeRequest) {
-                val rawContent = (if (targetFile == activePair?.first) activePair?.second else taggedMap[targetFile]) ?: ""
-                val fixResult = analyzeAndFixCode(targetFile, rawContent, lastUserPrompt)
-                val reply = buildString {
-                    append("### Needle-3 On-Device Code Intelligence\n\n")
-                    append(fixResult.explanation)
-                    append("\n\n")
-                    append("<edit file=\"$targetFile\">\n")
-                    append(fixResult.fixedCode)
-                    append("\n</edit>")
-                }
-                emit(AiChunk.Token(reply))
-                emit(AiChunk.Done(reply))
-                return@flow
-            }
-
-            val guide = buildString {
-                append("### ⚡ Needle-3 (On-Device System-1 Tool Engine)\n\n")
-                append("Needle-3 (~30MB) is active and running on-device as your mobile tool co-processor.\n\n")
-                append("#### What Needle-3 does automatically:\n")
-                append("- **GitHub & Git**: Instant repo connection, disconnection (`unlink repo`), clone into `/storage/emulated/0/Kryptonide`, and commit push.\n")
-                append("- **Terminal Execution**: Runs shell commands (`npm`, `git`, `python`, `node`) safely in your project workspace.\n")
-                append("- **Web Search & MCP**: Executes live documentation lookups and MCP tools on demand.\n\n")
-                append("> [!TIP]\n")
-                append("> Needle-3 is specialized for ultra-fast on-device tool calling. For full conversational chat and deep code reasoning offline, download **Qwen 2.5 Coder 1.5B** or **MiniCPM** in Settings → Pocket Server, or select a Cloud model (Gemini, Groq, Claude) in the header picker!")
-            }
-            emit(AiChunk.Token(guide))
-            emit(AiChunk.Done(guide))
-            return@flow
-        }
 
         // 1. Check local GGUF server (llama-server on http://127.0.0.1:8765)
         var serverActive = withContext(Dispatchers.IO) {
@@ -1216,7 +1221,7 @@ class AiEngine {
 
             val nativeText = withContext(Dispatchers.IO) {
                 runCatching {
-                    runner.runInference(activeModel.file, formattedChatML, "", maxTokens = 384)
+                    runner.runInference(activeModel.file, formattedChatML, "", maxTokens = 1024)
                 }.getOrNull()
             }?.replace("<|im_end|>", "")?.trim()
 
@@ -1250,8 +1255,8 @@ class AiEngine {
         // 3. If neither server nor local model is available, show clear guide message
         val guideMessage = buildString {
             append("### No Active Model Loaded\n\n")
-            append("Krypton AI is ready, but no local GGUF model is loaded and no Cloud API key is configured.\n\n")
-            append("#### How to use Krypton AI:\n")
+            append("Oorty Lite is ready, but no local GGUF model is loaded and no Cloud API key is configured.\n\n")
+            append("#### How to use Oorty Lite:\n")
             append("1. **On-Device Local Pocket Server**: Place any `.gguf` model (e.g. *Qwen 2.5 Coder*, *Gemma 2 2B*, *MiniCPM 5*) in `/storage/emulated/0/Kryptonide/models/` and select it in the header.\n")
             append("2. **Cloud BYOK (Bring Your Own Key)**: Tap the model selector in the AI panel header to configure an API key for **Google Gemini**, **Anthropic Claude**, **OpenAI**, **Groq**, or **OpenRouter**.")
         }
@@ -1275,7 +1280,7 @@ class AiEngine {
     }
 
     internal fun parseActiveFile(systemPrompt: String): Pair<String, String>? {
-        val regex = Regex("""<active_file path="([^"]*)">([\s\S]*?)<\/active_file>""")
+        val regex = Regex("""<active_file (?:path|name)="([^"]*)">([\s\S]*?)<\/active_file>""")
         val match = regex.find(systemPrompt) ?: return null
         val path = match.groupValues[1]
         val content = stripLineNumbers(match.groupValues[2])
@@ -1751,8 +1756,8 @@ class Main {
 
         return buildString {
             append("### No Active Model Loaded\n\n")
-            append("Krypton AI is ready, but no local GGUF model is loaded and no Cloud API key is configured.\n\n")
-            append("#### How to use Krypton AI:\n")
+            append("Oorty Lite is ready, but no local GGUF model is loaded and no Cloud API key is configured.\n\n")
+            append("#### How to use Oorty Lite:\n")
             append("1. **On-Device Local Pocket Server**: Place any `.gguf` model (e.g. *Qwen 2.5 Coder*, *Gemma 2 2B*, *MiniCPM 5*) in `/storage/emulated/0/Kryptonide/models/` and select it from the header.\n")
             append("2. **Cloud BYOK**: Tap the model selector in the AI panel header to configure an API key for **Google Gemini**, **Anthropic Claude**, **OpenAI**, **Groq**, or **OpenRouter**.")
         }

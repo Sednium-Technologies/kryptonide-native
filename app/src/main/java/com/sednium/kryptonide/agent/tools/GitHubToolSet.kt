@@ -81,7 +81,7 @@ class GitHubToolSet(
                     }
                     ToolResult(
                         success = true,
-                        output = "🚀 **Pushed to GitHub**\n- **Repository**: `$linked`\n- **Branch**: `main`\n- **Files Pushed**: ${files.size} workspace files\n- **Commit**: \"$commitMsg\"",
+                        output = "**Pushed to GitHub**\n- **Repository**: `$linked`\n- **Branch**: `main`\n- **Files Pushed**: ${files.size} workspace files\n- **Commit**: \"$commitMsg\"",
                         exitCode = 0
                     )
                 } catch (e: Throwable) {
@@ -159,7 +159,7 @@ class GitHubToolSet(
                     return@ToolDefinition ToolResult(
                         success = false,
                         output = "",
-                        error = "⚠️ Connection Failed: $errorMsg\n\nIf this is a private repository, please ensure you are signed in to GitHub with a personal access token with 'repo' scope in the Git tab.",
+                        error = "Connection Failed: $errorMsg\n\nIf this is a private repository, please ensure you are signed in to GitHub with a personal access token with 'repo' scope in the Git tab.",
                         exitCode = 1
                     )
                 }
@@ -169,7 +169,7 @@ class GitHubToolSet(
                 setLinkedRepo(canonicalName)
                 ToolResult(
                     success = true,
-                    output = "🔗 **GitHub Repository Linked**\n- **Repository**: `$canonicalName`\n- **Visibility**: ${if (verifiedRepo.private) "Private 🔒" else "Public 🌐"}\n- **Default Branch**: `${verifiedRepo.default_branch}`\n- **Status**: Verified and successfully connected. All subsequent git/push actions will target this repository.",
+                    output = "**GitHub Repository Linked**\n- **Repository**: `$canonicalName`\n- **Visibility**: ${if (verifiedRepo.private) "Private" else "Public"}\n- **Default Branch**: `${verifiedRepo.default_branch}`\n- **Status**: Verified and successfully connected. All subsequent git/push actions will target this repository.",
                     exitCode = 0
                 )
             }
@@ -185,7 +185,7 @@ class GitHubToolSet(
                 setLinkedRepo(null)
                 ToolResult(
                     success = true,
-                    output = "🔌 **GitHub Repository Disconnected**\n- **Previous Repository**: ${previous ?: "None"}\n- **Status**: Successfully unlinked. No repository is currently linked to this project.",
+                    output = "**GitHub Repository Disconnected**\n- **Previous Repository**: ${previous ?: "None"}\n- **Status**: Successfully unlinked. No repository is currently linked to this project.",
                     exitCode = 0
                 )
             }
@@ -273,7 +273,7 @@ class GitHubToolSet(
 
                     ToolResult(
                         success = true,
-                        output = "📦 **Repository Cloned Successfully**\n- **Remote URL**: `$fullUrl`\n- **Destination**: `${targetDir.absolutePath}`\n- **Files Cloned**: $fileCount files\n- **Linked Repo**: `$linkedSlug`\n\nAll files have been cloned and are ready in your Kryptonide workspace.",
+                        output = "**Repository Cloned Successfully**\n- **Remote URL**: `$fullUrl`\n- **Destination**: `${targetDir.absolutePath}`\n- **Files Cloned**: $fileCount files\n- **Linked Repo**: `$linkedSlug`\n\nAll files have been cloned and are ready in your Kryptonide workspace.",
                         exitCode = 0
                     )
                 } catch (e: org.eclipse.jgit.api.errors.TransportException) {
@@ -300,7 +300,7 @@ class GitHubToolSet(
                 val files = getFiles()
 
                 val info = buildString {
-                    appendLine("📊 **GitHub Integration Status**")
+                    appendLine("**GitHub Integration Status**")
                     appendLine("- **Linked Repository**: ${linked ?: "None (not linked)"}")
                     appendLine("- **Authentication**: ${if (hasToken) "Authenticated (Token configured)" else "Not signed in"}")
                     appendLine("- **Project Files**: ${files.size} files in workspace")

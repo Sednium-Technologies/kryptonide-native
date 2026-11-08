@@ -54,7 +54,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -414,6 +414,7 @@ fun ProjectsDashboard(
         modifier = Modifier
             .fillMaxSize()
             .background(BgDark)
+            .statusBarsPadding()
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(), 
@@ -424,7 +425,6 @@ fun ProjectsDashboard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .statusBarsPadding()
                         .padding(top = 12.dp, bottom = 16.dp), 
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -1231,8 +1231,8 @@ fun JumpBackInHeroCard(
     onCreateClicked: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (project != null) {
-        val templateConfig = remember(project.template) {
+    if (project == null) return
+    val templateConfig = remember(project.template) {
             DashboardCategories.flatMap { it.templates }.find { it.templateEnum == project.template }
                 ?: DashboardCategories.last().templates.first()
         }
@@ -1364,64 +1364,7 @@ fun JumpBackInHeroCard(
                 }
             }
         }
-    } else {
-        // Welcoming card when zero projects exist
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(SurfaceDark)
-                .border(1.dp, BorderDark, RoundedCornerShape(18.dp))
-                .bounceClick { onCreateClicked() }
-                .padding(18.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(AccentColor.copy(alpha = 0.15f))
-                            .padding(10.dp)
-                    ) {
-                        Icon(
-                            Lucide.Code,
-                            contentDescription = null,
-                            tint = AccentColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            text = "Welcome to Krypton",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "Tap to create your first project",
-                            fontSize = 12.sp,
-                            color = TextMuted
-                        )
-                    }
-                }
-                Icon(
-                    Lucide.Plus,
-                    contentDescription = null,
-                    tint = AccentColor,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
     }
-}
 
 @Composable
 fun StorageProviderCard(

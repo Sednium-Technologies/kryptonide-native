@@ -274,6 +274,13 @@ object NeedleToolDispatcher {
             }
         }
 
+        if (calls.isEmpty()) {
+            val cpmParsed = MiniCpmToolParser.parse(text)
+            if (cpmParsed.toolCalls.isNotEmpty()) {
+                calls.addAll(cpmParsed.toolCalls)
+            }
+        }
+
         return calls
     }
 

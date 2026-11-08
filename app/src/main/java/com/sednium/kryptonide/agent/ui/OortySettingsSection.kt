@@ -66,7 +66,7 @@ fun OortySettingsSection(
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            text = "Kryptonide AI",
+                            text = "Oorty Lite",
                             color = colors.OnBackground,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
@@ -198,7 +198,7 @@ fun OortySettingsSection(
                     Icon(Lucide.Lock, contentDescription = null, tint = colors.Muted, modifier = Modifier.size(18.dp))
                 }
                 Column {
-                    Text("Kryptonide AI System Directives", color = colors.OnBackground, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Oorty Lite System Directives", color = colors.OnBackground, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Text("Immutable deterministic protocol (.ai, AIF, tags)", color = colors.Muted, fontSize = 11.sp)
                 }
             }

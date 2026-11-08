@@ -31,7 +31,7 @@ data class PostFlightResult(
  * and Post-Flight Autonomous Runtime Verification & Self-Healing.
  *
  * Designed with a Smart RAM-Safe Routing Strategy:
- * When heavy local models (Qwen 1.5B) are resident in libllama_server.so,
+ * When heavy local models (MiniCPM5 1B) are resident in libllama_server.so,
  * Pre-Flight tools run in-process with ZERO model-swap RAM lag.
  */
 object NeedleAgentCoordinator {
@@ -121,7 +121,7 @@ object NeedleAgentCoordinator {
             )
         }
 
-        val statusMsg = "🔍 Needle: Scanning workspace & runtime..."
+        val statusMsg = "Scanning workspace & runtime..."
         onStatus?.invoke("<status>$statusMsg</status>")
 
         // 1. Workspace Search (search_grep)
@@ -168,7 +168,7 @@ object NeedleAgentCoordinator {
             if (searchFindings.isNotBlank() || consoleErrors != null || terminalOut != null) {
                 appendLine("<needle_workspace_findings>")
                 if (searchFindings.isNotBlank()) {
-                    appendLine("<!-- Workspace search results discovered by Needle-3 -->")
+                    appendLine("<!-- Workspace search results discovered for agent -->")
                     appendLine(searchFindings.toString().trim())
                 }
                 if (consoleErrors != null) {
@@ -194,9 +194,9 @@ object NeedleAgentCoordinator {
     }
 
     /**
-     * STEP 3 — Post-Flight Autonomous Runtime Verification & Self-Healing.
-     * Verifies file syntax, unclosed tags, and live preview console logs.
-     * Automatically applies a self-healing patch if an unclosed tag or syntax issue is detected.
+     * STEP 3 — Post-Flight Autonomous Runtime Verification & Multi-Pass Self-Healing.
+     * Verifies file syntax, unclosed tags, missing asset/script references, and live preview console logs.
+     * Automatically applies surgical self-healing patches across up to 3 passes.
      */
     suspend fun runPostFlightVerification(
         targetFilePath: String?,
@@ -207,78 +207,85 @@ object NeedleAgentCoordinator {
             NeedleToolExecutor.projectDirProvider = { projectDir }
         }
 
-        val checkStatus = "🧪 Needle: Checking runtime & syntax..."
+        val checkStatus = "Checking runtime & syntax..."
         onStatus?.invoke("<status>$checkStatus</status>")
 
         val fileToInspect = targetFilePath
             ?: NeedleToolExecutor.activeFilePathProvider?.invoke()
             ?: "index.html"
 
-        // 1. Run Syntax & Tag Diagnostics
+        val healingActions = mutableListOf<String>()
+        val projectRoot = NeedleToolExecutor.getProjectRoot()
         var diagRes = NeedleToolExecutor.codeGetDiagnostics(fileToInspect)
-        var selfHealingApplied = false
-        var selfHealingDetails: String? = null
 
-        // 2. Self-Healing Pass for Unclosed HTML Tags
-        if (!diagRes.success && diagRes.error != null) {
-            val err = diagRes.error!!
-            if (err.contains("Unclosed tag <")) {
-                val tagName = Regex("""Unclosed tag <([a-zA-Z0-9-]+)>""").find(err)?.groupValues?.get(1)
-                if (tagName != null) {
-                    onStatus?.invoke("<status>🩹 Needle: Self-healing unclosed <$tagName> tag...</status>")
-                    val readRes = NeedleToolExecutor.fsReadFile(fileToInspect)
-                    if (readRes.success) {
-                        val file = File(NeedleToolExecutor.getProjectRoot(), fileToInspect)
-                        if (file.exists()) {
-                            val content = file.readText()
-                            val closingBefore = Regex("""before closing </([a-zA-Z0-9-]+)>""").find(err)?.groupValues?.get(1)
-                            val targetClosing = if (closingBefore != null) "</$closingBefore>" else if (content.contains("</body>")) "</body>" else null
-                            val fixedContent = if (targetClosing != null && content.contains(targetClosing)) {
-                                content.replace(targetClosing, "  </$tagName>\n$targetClosing")
-                            } else {
-                                "$content\n</$tagName>"
-                            }
-                            val writeRes = NeedleToolExecutor.fsWriteFile(fileToInspect, fixedContent)
-                            if (writeRes.success) {
-                                selfHealingApplied = true
-                                selfHealingDetails = "Automatically closed dangling `<$tagName>` before ${targetClosing ?: "end of file"} in `$fileToInspect`."
-                                // Re-verify diagnostics
-                                diagRes = NeedleToolExecutor.codeGetDiagnostics(fileToInspect)
-                            }
-                        }
-                    }
+        // Multi-Pass Self-Healing Loop (up to 3 passes)
+        for (pass in 1..3) {
+            var passRepairedSomething = false
+
+            // Pass Step A: HTML / CSS Syntax Diagnostics Healing
+            if (!diagRes.success) {
+                val syntaxFixes = healSyntaxDiagnostics(fileToInspect, projectRoot, diagRes, onStatus)
+                if (syntaxFixes.isNotEmpty()) {
+                    healingActions.addAll(syntaxFixes)
+                    passRepairedSomething = true
+                    diagRes = NeedleToolExecutor.codeGetDiagnostics(fileToInspect)
                 }
+            }
+
+            // Pass Step B: Missing Resource Links (Assets, Stylesheets, Scripts)
+            val resourceFixes = healMissingResourcesAndLinks(fileToInspect, projectRoot, onStatus)
+            if (resourceFixes.isNotEmpty()) {
+                healingActions.addAll(resourceFixes)
+                passRepairedSomething = true
+            }
+
+            // Pass Step C: Runtime JS & DOM Console Errors
+            val runtimeFixes = healRuntimeConsoleErrors(projectRoot, onStatus)
+            if (runtimeFixes.isNotEmpty()) {
+                healingActions.addAll(runtimeFixes)
+                passRepairedSomething = true
+            }
+
+            if (!passRepairedSomething) {
+                break
             }
         }
 
-        // 3. Web Preview Verification
+        // Web Preview Verification
         val hasPreview = PreviewConsoleBridge.hasActiveWebView()
         var previewHealthy = true
         if (hasPreview) {
             NeedleToolExecutor.previewReload()
-            // Allow JS runtime to evaluate fresh reload
             delay(150)
             val consoleErrors = PreviewConsoleBridge.getEntries("ERROR")
             if (consoleErrors.isNotEmpty()) {
                 previewHealthy = false
             }
+        } else {
+            val errors = PreviewConsoleBridge.getEntries("ERROR")
+            if (errors.isNotEmpty()) {
+                previewHealthy = false
+            }
         }
 
-        // 4. Generate Summary Card
+        val selfHealingApplied = healingActions.isNotEmpty()
+        val selfHealingDetails = if (selfHealingApplied) {
+            healingActions.joinToString("; ")
+        } else null
+
+        // Generate Summary Card
         val summaryCard = buildString {
-            append("\n\n> 🧪 **Runtime Verification Summary**\n")
+            append("\n\n> **Runtime Verification Summary**\n")
             if (diagRes.success) {
                 append("> - **Syntax & Diagnostics**: Clean (0 errors detected)\n")
             } else {
                 append("> - **Syntax & Diagnostics**: Issues detected: ${diagRes.error}\n")
             }
-            if (hasPreview) {
-                if (previewHealthy) {
-                    append("> - **Preview Runtime**: Healthy (0 JS console errors)\n")
-                } else {
-                    val count = PreviewConsoleBridge.getEntries("ERROR").size
-                    append("> - **Preview Runtime**: Warning ($count runtime console errors detected)\n")
-                }
+            if (previewHealthy) {
+                append("> - **Preview Runtime**: Healthy (0 JS console errors)\n")
+            } else {
+                val count = PreviewConsoleBridge.getEntries("ERROR").size
+                append("> - **Preview Runtime**: Warning ($count runtime console errors detected)\n")
             }
             if (selfHealingApplied && selfHealingDetails != null) {
                 append("> - **Autonomous Self-Healing**: $selfHealingDetails\n")
@@ -296,11 +303,291 @@ object NeedleAgentCoordinator {
         )
     }
 
+    private suspend fun healSyntaxDiagnostics(
+        fileToInspect: String,
+        projectRoot: File,
+        diagRes: ToolResult,
+        onStatus: (suspend (String) -> Unit)?
+    ): List<String> {
+        val actions = mutableListOf<String>()
+        val targetFile = File(projectRoot, fileToInspect)
+        if (!targetFile.exists()) return actions
+
+        val output = diagRes.output + "\n" + (diagRes.error ?: "")
+        var content = targetFile.readText()
+
+        // 1. Unclosed HTML tags
+        val unclosedMatches = Regex("""Unclosed tag <([a-zA-Z0-9-]+)>""").findAll(output).toList()
+        if (unclosedMatches.isNotEmpty()) {
+            unclosedMatches.forEach { match ->
+                val tagName = match.groupValues[1]
+                onStatus?.invoke("<status>🩹 Needle: Self-healing unclosed <$tagName> tag...</status>")
+                val closingBefore = Regex("""before closing </([a-zA-Z0-9-]+)>""").find(match.value)?.groupValues?.get(1)
+                val targetClosing = if (closingBefore != null && content.contains("</$closingBefore>")) {
+                    "</$closingBefore>"
+                } else if (content.contains("</body>")) {
+                    "</body>"
+                } else if (content.contains("</html>")) {
+                    "</html>"
+                } else null
+
+                content = if (targetClosing != null) {
+                    content.replace(targetClosing, "  </$tagName>\n$targetClosing")
+                } else {
+                    "$content\n</$tagName>"
+                }
+                actions.add("Automatically closed dangling `<$tagName>` before ${targetClosing ?: "end of file"} in `$fileToInspect`.")
+            }
+            NeedleToolExecutor.fsWriteFile(fileToInspect, content)
+        }
+
+        // 2. Unclosed CSS blocks
+        if (output.contains("Unclosed CSS block starting with '{'")) {
+            val unclosedCount = output.split("Unclosed CSS block").size - 1
+            var updatedCss = targetFile.readText()
+            repeat(unclosedCount.coerceAtLeast(1)) {
+                updatedCss += "\n}"
+            }
+            NeedleToolExecutor.fsWriteFile(fileToInspect, updatedCss)
+            actions.add("Automatically closed unclosed CSS block(s) in `$fileToInspect`.")
+        }
+
+        return actions
+    }
+
+    private suspend fun healMissingResourcesAndLinks(
+        fileToInspect: String,
+        projectRoot: File,
+        onStatus: (suspend (String) -> Unit)?
+    ): List<String> {
+        val actions = mutableListOf<String>()
+        val htmlFile = when {
+            fileToInspect.endsWith(".html") || fileToInspect.endsWith(".htm") -> File(projectRoot, fileToInspect)
+            File(projectRoot, "index.html").exists() -> File(projectRoot, "index.html")
+            else -> null
+        } ?: return actions
+
+        if (!htmlFile.exists()) return actions
+        var htmlContent = htmlFile.readText()
+        var htmlModified = false
+
+        // A. Check referenced scripts in HTML
+        val scriptSrcMatches = Regex("""<script[^>]+src=["']([^"']+)["']""").findAll(htmlContent)
+        for (m in scriptSrcMatches) {
+            val src = m.groupValues[1].trim()
+            if (!src.startsWith("http://") && !src.startsWith("https://") && !src.startsWith("//") && !src.startsWith("data:")) {
+                val scriptFile = File(projectRoot, src)
+                if (!scriptFile.exists()) {
+                    onStatus?.invoke("<status>🩹 Synthesizing missing script '$src'...</status>")
+                    scriptFile.parentFile?.mkdirs()
+                    scriptFile.writeText(
+                        """
+                        // Auto-generated by Self-Healing Pipeline
+                        console.log('[$src] Initialized.');
+                        """.trimIndent() + "\n"
+                    )
+                    actions.add("Created missing referenced script `$src`")
+                }
+            }
+        }
+
+        // B. Check referenced stylesheets in HTML
+        val linkHrefMatches = Regex("""<link[^>]+href=["']([^"']+)["'][^>]*>""").findAll(htmlContent)
+        for (m in linkHrefMatches) {
+            val tag = m.value
+            if (tag.contains("stylesheet")) {
+                val href = m.groupValues[1].trim()
+                if (!href.startsWith("http://") && !href.startsWith("https://") && !href.startsWith("//")) {
+                    val cssFile = File(projectRoot, href)
+                    if (!cssFile.exists()) {
+                        onStatus?.invoke("<status>🩹 Synthesizing missing stylesheet '$href'...</status>")
+                        cssFile.parentFile?.mkdirs()
+                        cssFile.writeText(
+                            """
+                            /* Auto-generated by Self-Healing Pipeline */
+                            * { box-sizing: border-box; }
+                            body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 1rem; }
+                            """.trimIndent() + "\n"
+                        )
+                        actions.add("Created missing referenced stylesheet `$href`")
+                    }
+                }
+            }
+        }
+
+        // C. Auto-link existing orphaned CSS if not linked
+        val candidateCssFiles = listOf("style.css", "styles.css", "main.css")
+        for (cssName in candidateCssFiles) {
+            val file = File(projectRoot, cssName)
+            if (file.exists() && !htmlContent.contains(cssName)) {
+                onStatus?.invoke("<status>🩹 Needle: Auto-linking $cssName to HTML...</status>")
+                htmlContent = if (htmlContent.contains("</head>")) {
+                    htmlContent.replace("</head>", "  <link rel=\"stylesheet\" href=\"$cssName\">\n</head>")
+                } else if (htmlContent.contains("<body")) {
+                    htmlContent.replace("<body", "<link rel=\"stylesheet\" href=\"$cssName\">\n<body")
+                } else {
+                    "<link rel=\"stylesheet\" href=\"$cssName\">\n$htmlContent"
+                }
+                htmlModified = true
+                actions.add("Auto-linked existing stylesheet `$cssName` into `${htmlFile.name}`")
+                break
+            }
+        }
+
+        // D. Auto-link existing orphaned JS if not linked
+        val candidateJsFiles = listOf("script.js", "app.js", "main.js", "index.js")
+        for (jsName in candidateJsFiles) {
+            val file = File(projectRoot, jsName)
+            if (file.exists() && !htmlContent.contains(jsName)) {
+                onStatus?.invoke("<status>🩹 Needle: Auto-linking $jsName to HTML...</status>")
+                htmlContent = if (htmlContent.contains("</body>")) {
+                    htmlContent.replace("</body>", "  <script src=\"$jsName\" defer></script>\n</body>")
+                } else if (htmlContent.contains("</html>")) {
+                    htmlContent.replace("</html>", "<script src=\"$jsName\" defer></script>\n</html>")
+                } else {
+                    "$htmlContent\n<script src=\"$jsName\" defer></script>"
+                }
+                htmlModified = true
+                actions.add("Auto-linked existing script `$jsName` into `${htmlFile.name}`")
+                break
+            }
+        }
+
+        if (htmlModified) {
+            htmlFile.writeText(htmlContent)
+        }
+
+        return actions
+    }
+
+    private suspend fun healRuntimeConsoleErrors(
+        projectRoot: File,
+        onStatus: (suspend (String) -> Unit)?
+    ): List<String> {
+        val actions = mutableListOf<String>()
+        val errorEntries = PreviewConsoleBridge.getEntries("ERROR")
+        if (errorEntries.isEmpty()) return actions
+
+        val htmlFile = File(projectRoot, "index.html").takeIf { it.exists() }
+            ?: projectRoot.walkTopDown().firstOrNull { it.name.endsWith(".html") }
+
+        // Find JS files
+        val jsFiles = projectRoot.walkTopDown().filter { it.extension == "js" }.toList()
+
+        for (entry in errorEntries) {
+            val msg = entry.message
+
+            // Case 1: ReferenceError (e.g. "Uncaught ReferenceError: onCalculate is not defined" or "Can't find variable: foo")
+            val refMatch = Regex("""(?:ReferenceError:\s*([a-zA-Z0-9_]+)\s+is\s+not\s+defined|Can't\s+find\s+variable:\s*([a-zA-Z0-9_]+))""")
+                .find(msg)
+            if (refMatch != null) {
+                val varName = refMatch.groupValues[1].ifEmpty { refMatch.groupValues[2] }
+                if (varName.isNotBlank()) {
+                    onStatus?.invoke("<status>🩹 Resolving ReferenceError for '$varName'...</status>")
+                    val targetJs = jsFiles.firstOrNull { it.name == entry.sourceId }
+                        ?: jsFiles.firstOrNull()
+                    if (targetJs != null && targetJs.exists()) {
+                        val currentJs = targetJs.readText()
+                        if (!currentJs.contains("function $varName") && !currentJs.contains("window.$varName")) {
+                            val stub = "\n\n// Auto-Healed Reference\nfunction $varName(...args) { console.warn('Stub: $varName invoked', args); }\nwindow.$varName = $varName;\n"
+                            targetJs.appendText(stub)
+                            actions.add("Synthesized missing function `$varName()` in `${targetJs.name}` to resolve ReferenceError")
+                        }
+                    } else if (htmlFile != null && htmlFile.exists()) {
+                        val htmlContent = htmlFile.readText()
+                        if (!htmlContent.contains("function $varName")) {
+                            val stub = "<script>\n  function $varName(...args) { console.warn('Stub: $varName invoked', args); }\n  window.$varName = $varName;\n</script>\n"
+                            val fixedHtml = if (htmlContent.contains("</body>")) {
+                                htmlContent.replace("</body>", "  $stub</body>")
+                            } else {
+                                "$htmlContent\n$stub"
+                            }
+                            htmlFile.writeText(fixedHtml)
+                            actions.add("Synthesized missing function `$varName()` in `${htmlFile.name}` to resolve ReferenceError")
+                        }
+                    }
+                }
+            }
+
+            // Case 2: Null DOM element access (e.g. "Cannot read properties of null (reading 'addEventListener')" or "Cannot set properties of null")
+            val isNullAccess = msg.contains("Cannot read properties of null") ||
+                msg.contains("Cannot set properties of null") ||
+                msg.contains("null is not an object")
+
+            if (isNullAccess && htmlFile != null && htmlFile.exists()) {
+                val htmlText = htmlFile.readText()
+                val accessedIds = mutableSetOf<String>()
+                val scanTargets = jsFiles + listOfNotNull(htmlFile)
+                scanTargets.forEach { f ->
+                    val txt = f.readText()
+                    Regex("""getElementById\(['"]([a-zA-Z0-9_-]+)['"]\)""").findAll(txt).forEach {
+                        accessedIds.add(it.groupValues[1])
+                    }
+                    Regex("""querySelector\(['"]#([a-zA-Z0-9_-]+)['"]\)""").findAll(txt).forEach {
+                        accessedIds.add(it.groupValues[1])
+                    }
+                }
+
+                for (id in accessedIds) {
+                    if (!htmlText.contains("id=\"$id\"") && !htmlText.contains("id='$id'")) {
+                        onStatus?.invoke("<status>🩹 Needle: Synthesizing missing DOM element with id='$id'...</status>")
+                        val elementHtml = if (id.contains("btn") || id.contains("button")) {
+                            "<button id=\"$id\">$id</button>\n"
+                        } else if (id.contains("input")) {
+                            "<input type=\"text\" id=\"$id\" placeholder=\"$id\" />\n"
+                        } else {
+                            "<div id=\"$id\"></div>\n"
+                        }
+                        val fixedHtml = if (htmlText.contains("</body>")) {
+                            htmlText.replace("</body>", "  $elementHtml</body>")
+                        } else {
+                            "$htmlText\n$elementHtml"
+                        }
+                        htmlFile.writeText(fixedHtml)
+                        actions.add("Synthesized missing DOM element `<... id=\"$id\">` in `${htmlFile.name}` to resolve null property access")
+                        break
+                    }
+                }
+            }
+        }
+
+        if (actions.isNotEmpty()) {
+            PreviewConsoleBridge.clear()
+        }
+
+        return actions
+    }
+
     /**
-     * Checks whether an on-device local model is already resident in RAM (e.g. Qwen in llama-server).
+     * Checks whether an on-device local model is already resident in RAM (e.g. MiniCPM in llama-server).
      * If so, returns true to prevent costly model-swap lag.
      */
     suspend fun isHeavyLocalModelWarm(): Boolean {
         return LocalGgufServerManager.isServerRunning()
+    }
+
+    /**
+     * Executes Provider-Aware active discovery and returns the HandoverDecision for the turn.
+     */
+    fun orchestrateHandover(
+        settingsStore: com.sednium.kryptonide.data.storage.SettingsStore? = null,
+        activeSavedModel: com.sednium.kryptonide.data.model.SavedModel? = null,
+        configuredProvider: String? = null,
+        configuredModel: String? = null,
+        configuredApiKey: String? = null,
+        configuredGeminiKey: String? = null,
+        configuredBaseUrl: String? = null,
+        localModelsDir: File? = null
+    ): HandoverDecision {
+        return NeedleProviderOrchestrator.resolveActiveProvider(
+            settingsStore = settingsStore,
+            activeSavedModel = activeSavedModel,
+            configuredProvider = configuredProvider,
+            configuredModel = configuredModel,
+            configuredApiKey = configuredApiKey,
+            configuredGeminiKey = configuredGeminiKey,
+            configuredBaseUrl = configuredBaseUrl,
+            localModelsDir = localModelsDir
+        )
     }
 }

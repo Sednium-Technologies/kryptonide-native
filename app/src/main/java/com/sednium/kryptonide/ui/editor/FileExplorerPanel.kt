@@ -38,6 +38,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import com.sednium.kryptonide.utils.KryptonHaptics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -103,6 +105,7 @@ fun FileExplorerPanel(
     val clipboardManager = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
     val colors = LocalKryptonColors.current
+    val view = LocalView.current
 
     var expandedFolders by remember { mutableStateOf(setOf<String>()) }
     var selectedFolderId by remember { mutableStateOf<String?>(null) }
@@ -227,7 +230,7 @@ fun FileExplorerPanel(
                                     val targetFolderId = selectedFolderId?.takeIf { id ->
                                         nodes.any { it.id == id && it.type == FileType.FOLDER }
                                     }
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    KryptonHaptics.click(context, view)
                                     if (clipboardIsCut) {
                                         onMoveNode(toPaste, targetFolderId)
                                         clipboardNode = null
@@ -257,7 +260,7 @@ fun FileExplorerPanel(
                         // Expand / Collapse all toggle
                         IconButton(
                             onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                KryptonHaptics.tick(context, view)
                                 expandedFolders = if (isAllExpanded) {
                                     emptySet()
                                 } else {
@@ -537,7 +540,7 @@ fun FileExplorerPanel(
                             )
                             .combinedClickable(
                                 onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    KryptonHaptics.tick(context, view)
                                     if (node.type == FileType.FOLDER) {
                                         selectedFolderId = node.id
                                         expandedFolders = if (expandedFolders.contains(node.id)) {
@@ -551,7 +554,7 @@ fun FileExplorerPanel(
                                     }
                                 },
                                 onLongClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    KryptonHaptics.click(context, view)
                                     contextMenuNode = node
                                     showContextMenu = true
                                 }
@@ -607,7 +610,7 @@ fun FileExplorerPanel(
                                     modifier = Modifier
                                         .size(32.dp)
                                         .clickable {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            KryptonHaptics.tick(context, view)
                                             expandedFolders = if (expandedFolders.contains(node.id)) {
                                                 expandedFolders - node.id
                                             } else {
@@ -837,7 +840,7 @@ fun FileExplorerPanel(
                 // Group 3: AI Assistant (for files)
                 if (targetNode.type == FileType.FILE) {
                     HorizontalDivider(color = colors.Border.copy(alpha = 0.4f), thickness = 0.5.dp, modifier = Modifier.padding(vertical = 4.dp))
-                    ContextMenuItem(Lucide.Sparkles, "Send to Kryptonide AI", tint = colors.Primary) {
+                    ContextMenuItem(Lucide.Sparkles, "Send to Oorty Lite", tint = colors.Primary) {
                         showContextMenu = false
                         onSendToAi(targetNode)
                     }

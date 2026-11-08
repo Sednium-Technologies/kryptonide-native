@@ -35,7 +35,7 @@ class KryptonAiService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("⚡ Krypton AI is generating...")
+            .setContentTitle("Oorty Lite is generating...")
             .setContentText("Local AI code generation in progress")
             .setSmallIcon(R.drawable.ic_notification_krypton)
             .setContentIntent(pi)
@@ -72,7 +72,7 @@ class KryptonAiService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Krypton AI Ongoing Tasks",
+                "Oorty Lite Ongoing Tasks",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Silent ongoing notification while AI is generating"

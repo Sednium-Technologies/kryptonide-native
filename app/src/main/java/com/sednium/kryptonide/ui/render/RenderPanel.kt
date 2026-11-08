@@ -219,8 +219,8 @@ fun RenderPanel(
                 .fillMaxWidth()
                 .height(54.dp)
                 .align(Alignment.TopCenter)
-                .background(colors.Surface)
-                .border(BorderStroke(0.5.dp, colors.Border))
+                .background(MaterialTheme.colorScheme.surface)
+                .border(BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant))
                 .padding(horizontal = 8.dp)
                 .zIndex(10f),
             verticalAlignment = Alignment.CenterVertically
@@ -239,7 +239,7 @@ fun RenderPanel(
                 Icon(
                     Lucide.ArrowLeft,
                     contentDescription = if (canGoBack) "Back in preview" else "Back to editor",
-                    tint = colors.OnSurface,
+                    tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -266,8 +266,8 @@ fun RenderPanel(
                     .weight(1f)
                     .padding(horizontal = 4.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(colors.Background.copy(alpha = 0.5f))
-                    .border(0.5.dp, colors.Border.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                    .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -275,7 +275,7 @@ fun RenderPanel(
                 Spacer(Modifier.width(5.dp))
                 Text(
                     text = "krypton://$projectName/$displayTarget",
-                    color = colors.OnSurface,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -296,7 +296,7 @@ fun RenderPanel(
                     Icon(
                         imageVector = if (isDesktopMode) Lucide.Laptop else Lucide.Smartphone,
                         contentDescription = if (isDesktopMode) "Desktop View (Active)" else "Mobile View (Active)",
-                        tint = if (isDesktopMode) colors.Primary else colors.Muted,
+                        tint = if (isDesktopMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(19.dp)
                     )
                 }
@@ -313,7 +313,7 @@ fun RenderPanel(
                 Icon(
                     Lucide.Terminal,
                     "Console",
-                    tint = if (showConsoleDrawer) colors.Primary else colors.Muted,
+                    tint = if (showConsoleDrawer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(17.dp)
                 )
                 if (errorCount > 0) {
@@ -383,7 +383,7 @@ fun RenderPanel(
                 Icon(
                     Lucide.ExternalLink,
                     "Open externally",
-                    tint = if (!state.previewUrl.isNullOrBlank()) colors.Primary else colors.Muted,
+                    tint = if (!state.previewUrl.isNullOrBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -405,7 +405,7 @@ fun RenderPanel(
                 Icon(
                     Lucide.Radio,
                     "Beam to Screen",
-                    tint = if (com.sednium.kryptonide.server.KryptonBeamServer.isRunning) colors.Primary else colors.OnSurface,
+                    tint = if (com.sednium.kryptonide.server.KryptonBeamServer.isRunning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -418,12 +418,12 @@ fun RenderPanel(
                 },
                 modifier = Modifier.size(34.dp)
             ) {
-                Icon(Lucide.RefreshCw, "Refresh", tint = colors.OnSurface, modifier = Modifier.size(18.dp))
+                Icon(Lucide.RefreshCw, "Refresh", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
             }
 
             // Close preview
             IconButton(onClick = onBack, modifier = Modifier.size(34.dp)) {
-                Icon(Lucide.X, "Close", tint = colors.Muted, modifier = Modifier.size(18.dp))
+                Icon(Lucide.X, "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
             }
         }
 
@@ -748,17 +748,24 @@ fun WebPreviewPane(
                         wv.settings.apply {
                             javaScriptEnabled                     = true
                             domStorageEnabled                     = true
-                            allowFileAccess                       = true
-                            allowContentAccess                    = true
+                            // The preview is untrusted user content. It must not
+                            // be able to read app-private files, content:// URIs,
+                            // or mixed HTTP resources while the page itself is
+                            // served from an HTTPS origin.
+                            allowFileAccess                       = false
+                            allowContentAccess                    = false
+                            allowFileAccessFromFileURLs           = false
+                            allowUniversalAccessFromFileURLs      = false
                             useWideViewPort                       = true
                             loadWithOverviewMode                  = true
                             setSupportZoom(true)
                             builtInZoomControls                   = true
                             displayZoomControls                   = false
                             textZoom                              = 100
-                            javaScriptCanOpenWindowsAutomatically = true
-                            @Suppress("DEPRECATION")
-                            mixedContentMode                      = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                            javaScriptCanOpenWindowsAutomatically = false
+                            mediaPlaybackRequiresUserGesture      = true
+                            setSafeBrowsingEnabled(true)
+                            mixedContentMode                      = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                             if (isDesktopMode) {
                                 userAgentString = DESKTOP_UA
                             }

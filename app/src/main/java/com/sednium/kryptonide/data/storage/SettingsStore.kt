@@ -22,16 +22,24 @@ object PrefKeys {
     val SAVED_MODELS    = stringPreferencesKey("saved_models")
     val ACTIVE_MODEL_ID = stringPreferencesKey("active_model_id")
     val ACTIVE_FONT     = stringPreferencesKey("active_font")
+    val SELECTED_POCKET_MODEL_ID = stringPreferencesKey("selected_pocket_model_id")
 }
 
 class SettingsStore(private val context: Context) {
 
     val theme: Flow<String>      = context.dataStore.data.map { it[PrefKeys.THEME]      ?: "dark" }
     val haptics: Flow<Boolean>   = context.dataStore.data.map { it[PrefKeys.HAPTICS]    ?: true }
-    val aiProvider: Flow<String> = context.dataStore.data.map { it[PrefKeys.AI_PROVIDER] ?: "openai" }
-    val aiModel: Flow<String>    = context.dataStore.data.map { it[PrefKeys.AI_MODEL]    ?: "gpt-4o" }
+    val aiProvider: Flow<String> = context.dataStore.data.map { it[PrefKeys.AI_PROVIDER] ?: "pocket" }
+    val aiModel: Flow<String>    = context.dataStore.data.map {
+        val model = it[PrefKeys.AI_MODEL] ?: com.sednium.kryptonide.agent.pocket.PocketModels.MINICPM_MODEL_ID
+        if (model == "lfm-250m-q4" || model == "needle-3-q4") com.sednium.kryptonide.agent.pocket.PocketModels.MINICPM_MODEL_ID else model
+    }
     val aiBaseUrl: Flow<String>  = context.dataStore.data.map { it[PrefKeys.AI_BASE_URL] ?: "" }
     val activeFont: Flow<String> = context.dataStore.data.map { it[PrefKeys.ACTIVE_FONT] ?: "" }
+    val selectedPocketModelId: Flow<String> = context.dataStore.data.map {
+        val id = it[PrefKeys.SELECTED_POCKET_MODEL_ID] ?: com.sednium.kryptonide.agent.pocket.PocketModels.MINICPM_MODEL_ID
+        if (id == "lfm-250m-q4" || id == "needle-3-q4") com.sednium.kryptonide.agent.pocket.PocketModels.MINICPM_MODEL_ID else id
+    }
 
     val savedModels: Flow<List<SavedModel>> = context.dataStore.data.map { prefs ->
         val raw = prefs[PrefKeys.SAVED_MODELS] ?: return@map emptyList()
@@ -49,6 +57,10 @@ class SettingsStore(private val context: Context) {
     suspend fun setAiModel(v: String)        = context.dataStore.edit { it[PrefKeys.AI_MODEL] = v }
     suspend fun setAiBaseUrl(v: String)      = context.dataStore.edit { it[PrefKeys.AI_BASE_URL] = v }
     suspend fun setActiveFont(v: String)     = context.dataStore.edit { it[PrefKeys.ACTIVE_FONT] = v }
+    suspend fun setSelectedPocketModelId(id: String) {
+        setSelectedPocketModelIdSync(id)
+        context.dataStore.edit { it[PrefKeys.SELECTED_POCKET_MODEL_ID] = id }
+    }
     suspend fun setActiveModelId(v: String?) = context.dataStore.edit {
         if (v == null) it.remove(PrefKeys.ACTIVE_MODEL_ID) else it[PrefKeys.ACTIVE_MODEL_ID] = v
     }
@@ -57,13 +69,14 @@ class SettingsStore(private val context: Context) {
     }
 
     // Encrypted at rest via Android Keystore — this file holds the GitHub
-    // access token (previously plain SharedPreferences despite the
-    // security-crypto dependency already being declared and unused for this
-    // purpose). Falls back to plain prefs only if key generation itself
-    // fails (e.g. some very old/locked-down OEM keystores) rather than
-    // crashing sign-in entirely — a degraded-but-working state is better
-    // than a hard crash for something this load-bearing.
-    private val prefs: SharedPreferences by lazy {
+    // access token, cloud-provider API keys and Gemini key.
+    //
+    // SECURITY: never silently fall back to a plaintext SharedPreferences file
+    // for secrets. If the Keystore is unavailable we keep non-sensitive UI
+    // settings usable in a separate fallback file, but secret getters return
+    // empty and secret setters are no-ops. A token written in cleartext is
+    // worse than making the user sign in again.
+    private val securePrefs: SharedPreferences? by lazy {
         runCatching {
             val masterKey = androidx.security.crypto.MasterKey.Builder(context)
                 .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
@@ -75,9 +88,23 @@ class SettingsStore(private val context: Context) {
                 androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
-        }.getOrElse {
-            context.getSharedPreferences("krypton_secure", Context.MODE_PRIVATE)
-        }
+        }.onFailure {
+            android.util.Log.e("SettingsStore", "Keystore-backed preferences unavailable", it)
+        }.getOrNull()
+    }
+
+    // Non-sensitive settings may use a plain fallback on devices with a broken
+    // Keystore. Secret accessors below intentionally do not use this file.
+    private val prefs: SharedPreferences by lazy {
+        securePrefs ?: context.getSharedPreferences("krypton_settings_fallback", Context.MODE_PRIVATE)
+    }
+
+    private fun getSecret(key: String): String = securePrefs?.getString(key, "") ?: ""
+    private fun setSecret(key: String, value: String) {
+        securePrefs?.edit()?.putString(key, value)?.apply()
+    }
+    private fun clearSecret(key: String) {
+        securePrefs?.edit()?.remove(key)?.apply()
     }
 
     fun getEditorTheme(): com.sednium.kryptonide.ui.editor.EditorTheme {
@@ -114,15 +141,15 @@ class SettingsStore(private val context: Context) {
     fun getModelChoice(): String = prefs.getString("model_choice", "") ?: ""
     fun setModelChoice(model: String) = prefs.edit().putString("model_choice", model).apply()
 
-    fun getApiKey(): String     = prefs.getString("api_key", "") ?: ""
-    fun setApiKey(key: String)  = prefs.edit().putString("api_key", key).apply()
+    fun getApiKey(): String     = getSecret("api_key")
+    fun setApiKey(key: String)  = setSecret("api_key", key)
 
-    fun getGeminiKey(): String = prefs.getString("gemini_key", "") ?: ""
-    fun setGeminiKey(key: String) = prefs.edit().putString("gemini_key", key).apply()
+    fun getGeminiKey(): String = getSecret("gemini_key")
+    fun setGeminiKey(key: String) = setSecret("gemini_key", key)
 
-    fun getGithubToken(): String       = prefs.getString("github_token", "") ?: ""
-    fun setGithubToken(token: String)  = prefs.edit().putString("github_token", token).apply()
-    fun clearGithubToken()             = prefs.edit().remove("github_token").apply()
+    fun getGithubToken(): String       = getSecret("github_token")
+    fun setGithubToken(token: String)  = setSecret("github_token", token)
+    fun clearGithubToken()             = clearSecret("github_token")
 
     // Tracks the release from the last successful cloud build per repo, so
     // a *new* successful build can offer to delete the previous one. Stored
@@ -152,6 +179,16 @@ class SettingsStore(private val context: Context) {
     fun getHapticsSync(): Boolean = prefs.getBoolean("haptics_enabled", true)
     fun setHapticsSync(enabled: Boolean) {
         prefs.edit().putBoolean("haptics_enabled", enabled).apply()
+    }
+
+    fun getSelectedPocketModelId(): String {
+        val id = prefs.getString("selected_pocket_model_id", com.sednium.kryptonide.agent.pocket.PocketModels.MINICPM_MODEL_ID)
+            ?: com.sednium.kryptonide.agent.pocket.PocketModels.MINICPM_MODEL_ID
+        return if (id == "lfm-250m-q4" || id == "needle-3-q4") com.sednium.kryptonide.agent.pocket.PocketModels.MINICPM_MODEL_ID else id
+    }
+
+    fun setSelectedPocketModelIdSync(id: String) {
+        prefs.edit().putString("selected_pocket_model_id", id).apply()
     }
 
     fun getEnablePrettier(): Boolean = prefs.getBoolean("enable_prettier", true)

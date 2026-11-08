@@ -37,8 +37,8 @@ data class AiUiState(
     val sessionStats: Map<String, com.sednium.kryptonide.data.repository.SessionStats> = emptyMap(),
     val isLoading: Boolean = false,
     val streamingText: String = "",
-    val provider: String = "openai",
-    val model: String = "gpt-4o",
+    val provider: String = "pocket",
+    val model: String = com.sednium.kryptonide.agent.pocket.PocketModels.MINICPM_MODEL_ID,
     val baseUrl: String = "",
     val savedModels: List<SavedModel> = emptyList(),
     val activeModelId: String? = null,
@@ -80,15 +80,15 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
     private var currentProjectId: String? = null
     private var editorVm: EditorViewModel? = null
     private var gitVm: com.sednium.kryptonide.ui.git.GitViewModel? = null
-    private var needleToolExecutionResult: String? = null
-    private var needlePreFlightFindings: String? = null
 
     init {
         com.sednium.kryptonide.agent.pocket.LocalGgufServerManager.appContext = app
         viewModelScope.launch {
             val p = settings.aiProvider.first()
             val m = settings.aiModel.first()
-            val resolvedModel = if (p == "pocket" && (m.isBlank() || m == "gpt-4o")) "needle-3-q4" else m
+            val resolvedModel = if (p == "pocket" && (m.isBlank() || m == "gpt-4o" || m.contains("needle") || m.contains("lfm"))) {
+                com.sednium.kryptonide.agent.pocket.PocketModels.MINICPM_MODEL_ID
+            } else m
             _state.value = _state.value.copy(
                 provider = p,
                 model    = resolvedModel,
@@ -225,24 +225,6 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
             val scanner = com.sednium.kryptonide.agent.pocket.StorageModelScanner(getApplication())
             val models = scanner.scanModels()
             val cleanQuery = targetModel.substringBeforeLast('.').lowercase(java.util.Locale.ROOT)
-            if (cleanQuery.contains("needle") || targetModel.contains("needle")) {
-                _state.value = _state.value.copy(
-                    modelRamStatus = ModelRamStatus.READY,
-                    modelRamMessage = "Ready in RAM • Needle 3 (System-1 Tool Engine)"
-                )
-                // If a background GGUF chat model is available, start it in llama-server
-                val ggufModel = models.firstOrNull { it.matchedCatalogSpec?.id != "needle-3-q4" && com.sednium.kryptonide.agent.pocket.LocalGgufServerManager.isGgufFile(it.file) }
-                if (ggufModel != null) {
-                    val serverBinary = com.sednium.kryptonide.agent.pocket.LocalGgufServerManager.findServerBinary(getApplication())
-                    if (serverBinary != null) {
-                        com.sednium.kryptonide.agent.pocket.LocalGgufServerManager.startServer(
-                            context = getApplication(),
-                            modelFile = ggufModel.file
-                        )
-                    }
-                }
-                return@launch
-            }
 
             val matched = models.firstOrNull {
                 it.name.lowercase(java.util.Locale.ROOT).contains(cleanQuery) ||
@@ -559,47 +541,6 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
                 currentTurnId = assistantTurnId
                 runCatching { com.sednium.kryptonide.agent.checkpoint.CheckpointManager.startTurn(assistantTurnId) }
 
-                // 0. System-1 Needle Tool Dispatcher: parse intent with sub-15ms latency
-                val activeNode = editorVm?.state?.value?.activeFileId?.let { editorVm?.state?.value?.files?.get(it) }
-                val currentLinkedRepo = getLinkedRepo()
-                val needleDispatch = com.sednium.kryptonide.agent.pocket.NeedleToolDispatcher.parseToolCall(
-                    prompt = userText,
-                    activeFilePath = activeNode?.name,
-                    linkedRepo = currentLinkedRepo
-                )
-
-                if (needleDispatch.toolCall != null) {
-                    val toolName = needleDispatch.toolCall.toolName
-                    val argsObj = buildJsonObject {
-                        needleDispatch.toolCall.arguments.forEach { (k, v) ->
-                            put(k, v.toString())
-                        }
-                    }
-                    val output = executeTool(toolName, argsObj)
-
-                    val isDirectActionTool = toolName in listOf("github_connect", "github_disconnect", "github_clone", "github_push", "github_status", "execute_terminal_command")
-                    if (isDirectActionTool) {
-                        _state.value = _state.value.copy(isLoading = false, streamingText = "")
-                        val assistantMsg = ChatMessage(
-                            id = UUID.randomUUID().toString(),
-                            sessionId = _state.value.activeSessionId ?: "default",
-                            projectId = currentProjectId ?: "default",
-                            role = MessageRole.ASSISTANT,
-                            content = output
-                        )
-                        repo.insertMessage(assistantMsg)
-                        _state.value = _state.value.copy(
-                            messages = _state.value.messages + assistantMsg,
-                            isLoading = false
-                        )
-                        return@launch
-                    }
-
-                    needleToolExecutionResult = "<!-- [Needle-3 On-Device System-1 Co-Processor executed '$toolName' in ${needleDispatch.latencyMs}ms] -->\n**System-1 Tool Execution ($toolName)**:\n```\n$output\n```\n\n"
-                } else {
-                    needleToolExecutionResult = null
-                }
-
                 // If running on-device pocket model, await RAM loading if currently in progress
                 if (_state.value.provider == "pocket") {
                     if (_state.value.modelRamStatus == ModelRamStatus.LOADING) {
@@ -627,7 +568,7 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
                     sessionId = _state.value.activeSessionId ?: "default",
                     projectId = currentProjectId ?: "default",
                     role = MessageRole.ASSISTANT,
-                    content = "⚠️ Error: ${t.localizedMessage ?: t.message ?: "Failed to process message"}"
+                    content = "Error: ${t.localizedMessage ?: t.message ?: "Failed to process message"}"
                 )
                 _state.value = _state.value.copy(messages = _state.value.messages + errMsg)
             }
@@ -704,58 +645,17 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
         if (depth == 0) {
             val lastUserMsg = messages.lastOrNull { it.role == MessageRole.USER }
             if (lastUserMsg != null) {
-                val activeNode = editorVm?.state?.value?.activeFileId?.let { editorVm?.state?.value?.files?.get(it) }
-                val currentLinkedRepo = getLinkedRepo()
-                val needleDispatch = com.sednium.kryptonide.agent.pocket.NeedleToolDispatcher.parseToolCall(
-                    prompt = lastUserMsg.content,
-                    activeFilePath = activeNode?.name,
-                    linkedRepo = currentLinkedRepo
+                // Active Provider Discovery via NeedleProviderOrchestrator (3-Tier Cascade)
+                val currentSnapshot = _state.value
+                val activeSaved = currentSnapshot.savedModels.firstOrNull { it.id == currentSnapshot.activeModelId }
+                val handoverDecision = com.sednium.kryptonide.agent.pocket.NeedleProviderOrchestrator.resolveActiveProvider(
+                    settingsStore = settingsStore,
+                    activeSavedModel = activeSaved,
+                    configuredProvider = currentSnapshot.provider,
+                    configuredModel = currentSnapshot.model,
+                    configuredApiKey = getApiKey(),
+                    configuredBaseUrl = currentSnapshot.baseUrl
                 )
-
-                if (needleDispatch.toolCall != null) {
-                    val toolName = needleDispatch.toolCall.toolName
-                    val argsObj = buildJsonObject {
-                        needleDispatch.toolCall.arguments.forEach { (k, v) ->
-                            put(k, v.toString())
-                        }
-                    }
-                    val output = executeTool(toolName, argsObj)
-
-                    val isDirectActionTool = toolName in listOf("github_connect", "github_disconnect", "github_clone", "github_push", "github_status", "execute_terminal_command")
-                    if (isDirectActionTool) {
-                        _state.value = _state.value.copy(isLoading = false, streamingText = "")
-                        val assistantMsg = ChatMessage(
-                            id = UUID.randomUUID().toString(),
-                            sessionId = sessionId,
-                            projectId = currentProjectId ?: "default",
-                            role = MessageRole.ASSISTANT,
-                            content = output
-                        )
-                        repo.insertMessage(assistantMsg)
-                        _state.value = _state.value.copy(
-                            messages = messages + assistantMsg,
-                            isLoading = false
-                        )
-                        return
-                    }
-
-                    needleToolExecutionResult = "<!-- [Needle-3 On-Device System-1 Co-Processor executed '$toolName' in ${needleDispatch.latencyMs}ms] -->\n**System-1 Tool Execution ($toolName)**:\n```\n$output\n```\n\n"
-                } else {
-                    needleToolExecutionResult = null
-                }
-
-                // STEP 1 — Pre-Flight Workspace Discovery & Runtime Error Inspection (Needle-3)
-                val preFlight = com.sednium.kryptonide.agent.pocket.NeedleAgentCoordinator.runPreFlight(
-                    userPrompt = lastUserMsg.content,
-                    projectDir = editorVm?.getProjectDirectory(),
-                    activeFile = activeNode?.name,
-                    onStatus = { statusText ->
-                        _state.value = _state.value.copy(streamingText = statusText)
-                    }
-                )
-                needlePreFlightFindings = if (preFlight.enrichedContextBlock.isNotBlank()) {
-                    preFlight.enrichedContextBlock + "\n\n"
-                } else null
             }
 
             com.sednium.kryptonide.service.KryptonAiService.start(getApplication())
@@ -808,13 +708,11 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
                         val activeNode = activeId?.let { editorVm?.state?.value?.files?.get(it) }
                         if (activeNode != null) {
                             val userQuery = lastMsg.content.lowercase().trim()
-                            val isChatQuestion = listOf(
-                                "why", "how", "what", "where", "who", "when", "can you explain",
-                                "explain", "describe", "tell me", "help me understand", "hello", "hi", "hey",
-                                "thanks", "thank you", "ok", "okay", "cool", "nice", "awesome",
-                                "what is", "what are", "what does", "why is", "why does", "why did",
-                                "how do", "how does", "how can"
-                            ).any { userQuery.startsWith(it) || userQuery == it || userQuery.startsWith("$it ") || userQuery.endsWith("?") }
+                            val isGreetingOrCasual = listOf(
+                                "hi", "hello", "hey", "how are you", "who are you", "what are you",
+                                "what can you do", "help", "thanks", "thank you", "ok", "okay",
+                                "cool", "nice", "awesome", "good morning", "good evening", "good afternoon"
+                            ).any { userQuery == it || userQuery.startsWith("$it ") || userQuery.startsWith("$it!") || userQuery.startsWith("$it.") || userQuery.startsWith("$it,") }
 
                             val isCreateRequest = listOf(
                                 "make a", "create a", "build a", "design a", "write a",
@@ -823,35 +721,33 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
                                 "make app", "create app", "build app"
                             ).any { userQuery.contains(it) }
 
-                            val isExplicitCodeAction = isCreateRequest || listOf(
-                                "fix the", "fix bug", "fix error", "change the", "update the", "modify the",
-                                "refactor the", "patch the", "add a", "remove the", "delete the", "replace the",
-                                "implement", "tweak the", "style the"
-                            ).any { userQuery.contains(it) }
+                            val targetPath = activeNode.name
+                            val isExplicitFileOrCodeAction = listOf(
+                                "fix", "edit", "change", "update", "modify", "refactor", "patch",
+                                "add", "remove", "delete", "replace", "implement", "tweak", "style",
+                                "review", "explain", "bug", "error", "issue", "test", "unit test",
+                                "optimize", "document", targetPath.lowercase()
+                            ).any { userQuery.contains(it) } ||
+                                userQuery.contains("this file") || userQuery.contains("the file") ||
+                                userQuery.contains("this code") || userQuery.contains("the code")
 
-                            val isCodeRequest = isExplicitCodeAction && (!isChatQuestion || listOf("make", "create", "build", "write", "fix", "change", "update", "add").any { userQuery.startsWith(it) })
-
-                            if (isCreateRequest && isCodeRequest) {
-                                "Target file to overwrite: ${activeNode.name} (write a brand-new, complete implementation from scratch in <edit file=\"${activeNode.name}\">...code...</edit>)\n\n"
-                            } else if (isCodeRequest) {
-                                val numbered = (activeNode.content ?: "").take(6_000).lines().mapIndexed { i, l -> "${i + 1}: $l" }.joinToString("\n")
-                                "<!-- Note: The current active file (${activeNode.name}) is shown below for reference. -->\n<active_file name=\"${activeNode.name}\">\n$numbered\n</active_file>\n\n"
-                            } else {
-                                ""
+                            when {
+                                isGreetingOrCasual -> "" // Do NOT inject active file content for greetings/casual chat
+                                isCreateRequest -> {
+                                    "Target file to overwrite: $targetPath (write a brand-new, complete implementation from scratch in <edit file=\"$targetPath\">...code...</edit>)\n\n"
+                                }
+                                isExplicitFileOrCodeAction -> {
+                                    val content = activeNode.content ?: ""
+                                    val numbered = content.take(30_000).lines().mapIndexed { i, l -> "${i + 1}: $l" }.joinToString("\n")
+                                    "<!-- Active file in editor: $targetPath -->\n<active_file path=\"$targetPath\">\n$numbered\n</active_file>\n\n"
+                                }
+                                else -> "" // Casual question without code action does not need raw file dump
                             }
                         } else ""
                     }
                 }
 
-                val finalTurnContext = buildString {
-                    if (needleToolExecutionResult != null && !lastMsg.content.contains("System-1 Tool Execution")) {
-                        append(needleToolExecutionResult)
-                    }
-                    if (needlePreFlightFindings != null && !lastMsg.content.contains("<needle_workspace_findings>")) {
-                        append(needlePreFlightFindings)
-                    }
-                    append(turnContextToInject)
-                }
+                val finalTurnContext = turnContextToInject
 
                 if (finalTurnContext.isNotBlank()) {
                     prunedMessages.dropLast(1) + lastMsg.copy(content = finalTurnContext + lastMsg.content)
@@ -951,7 +847,7 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
                                     sessionId = sessionId,
                                     projectId = currentProjectId ?: "",
                                     role = MessageRole.TOOL,
-                                    content = "[Needle-3 Tool Result (${call.toolName})]:\n$output",
+                                    content = "[Tool Result (${call.toolName})]:\n$output",
                                     toolName = call.toolName
                                 )
                                 repo.insertMessage(toolMsg)
@@ -1027,7 +923,7 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
                     is AiChunk.Error -> {
                         com.sednium.kryptonide.agent.notifications.AiNotificationHelper.cancelProgressNotification(getApplication())
                         if (com.sednium.kryptonide.utils.AppLifecycleTracker.isAppInBackground) {
-                            com.sednium.kryptonide.agent.notifications.AiNotificationHelper.showCompletionNotification(getApplication(), "⚠️ " + chunk.message.take(100))
+                            com.sednium.kryptonide.agent.notifications.AiNotificationHelper.showCompletionNotification(getApplication(), chunk.message.take(100))
                         }
                         val isNetworkError = chunk.message.contains("Unable to resolve host", ignoreCase = true) ||
                             chunk.message.contains("ConnectException", ignoreCase = true) ||
@@ -1038,7 +934,7 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
                         val replyContent = if (isNetworkError && s.provider != "pocket") {
                             val lastUser = messages.lastOrNull { it.role == MessageRole.USER }?.content ?: ""
                             val reflex = com.sednium.kryptonide.agent.pocket.LayaSystemOneEngine.route(lastUser)
-                            "⚠️ Network unreachable (Offline Mode).\n\nKryptonide AI Fast-Path Routing: ${reflex.route.name} (${reflex.reasoning})\n\nTo continue offline, start Pocket Server in Settings → Pocket Server, or reconnect to Wi-Fi/cellular."
+                            "Network unreachable (Offline Mode).\n\nOorty Lite Fast-Path Routing: ${reflex.route.name} (${reflex.reasoning})\n\nTo continue offline, start Pocket Server in Settings → Pocket Server, or reconnect to Wi-Fi/cellular."
                         } else {
                             "Error: ${chunk.message}"
                         }
@@ -1069,7 +965,7 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
                 sessionId = sessionId,
                 projectId = currentProjectId ?: "",
                 role = MessageRole.ASSISTANT,
-                content = "⚠️ AI Error: ${t.localizedMessage ?: t.message ?: "An unexpected error occurred during inference."}"
+                content = "AI Error: ${t.localizedMessage ?: t.message ?: "An unexpected error occurred during inference."}"
             )
             runCatching { repo.insertMessage(errMsg) }
             _state.value = _state.value.copy(
@@ -1113,7 +1009,7 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
                 val cmd = convertedArgs["command"]?.toString() ?: ""
                 val risk = com.sednium.kryptonide.agent.pocket.LayaSystemOneEngine.risk(cmd, oortyEngine.executionTier)
                 if (!risk.isAllowed) {
-                    return "Command execution blocked by Kryptonide AI Risk Classifier: ${risk.reason}"
+                    return "Command execution blocked by Oorty Lite Risk Classifier: ${risk.reason}"
                 }
             }
 

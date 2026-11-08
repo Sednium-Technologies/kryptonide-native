@@ -118,6 +118,7 @@ fun SettingsScreen(
     }
     
     var showPocketServerModal by remember { mutableStateOf(false) }
+    var showAiOnboardingModal by remember { mutableStateOf(false) }
     var otaReleaseToPrompt by remember { mutableStateOf<com.sednium.kryptonide.ota.OtaReleaseInfo?>(null) }
 
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -323,7 +324,7 @@ fun SettingsScreen(
                             Column(Modifier.weight(1f)) {
                                 Text(saved.name, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                                 Text(
-                                    if (isPocket) "⚡ Pocket Server (Local) · ${saved.model}"
+                                    if (isPocket) "Pocket Server (Local) · ${saved.model}"
                                     else "${provider?.name ?: saved.provider} · ${saved.model}",
                                     color = if (isPocket) AccentLight else TextMuted, fontSize = 12.sp
                                 )
@@ -351,7 +352,7 @@ fun SettingsScreen(
                                         id = "pocket-local-daemon",
                                         name = "Pocket Server (Local)",
                                         provider = "pocket",
-                                        model = "needle-3-q4",
+                                        model = com.sednium.kryptonide.agent.pocket.PocketModels.MINICPM_MODEL_ID,
                                         apiKey = "",
                                         baseUrl = "http://127.0.0.1:8080/v1"
                                     )
@@ -365,10 +366,33 @@ fun SettingsScreen(
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text("Add Pocket Server (On-Device)", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                Text("1-tap enable local inference with Needle 3 (no key)", color = TextMuted, fontSize = 11.sp)
+                                Text("1-tap enable local inference with MiniCPM 1B (no key)", color = TextMuted, fontSize = 11.sp)
                             }
                             Icon(Lucide.Plus, null, tint = AccentLight, modifier = Modifier.size(16.dp))
                         }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 6.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(SurfaceDark)
+                            .border(0.5.dp, BorderDark, RoundedCornerShape(10.dp))
+                            .clickable {
+                                com.sednium.kryptonide.utils.KryptonHaptics.click(context, null)
+                                showAiOnboardingModal = true
+                            }
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Lucide.Sparkles, null, tint = AccentLight, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Re-run AI Onboarding Setup", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Download & Activate MiniCPM 1B (~650MB)", color = TextMuted, fontSize = 11.sp)
+                        }
+                        Icon(Lucide.ChevronRight, null, tint = TextMuted, modifier = Modifier.size(16.dp))
                     }
 
                     Row(
@@ -1052,6 +1076,14 @@ fun SettingsScreen(
         com.sednium.kryptonide.agent.ui.PocketServerScreen(
             pocketManager = pocketManager,
             onBack = { showPocketServerModal = false }
+        )
+    }
+
+    if (showAiOnboardingModal) {
+        val kc = LocalKryptonColors.current
+        com.sednium.kryptonide.ui.onboarding.AiOnboardingDialog(
+            colors = kc,
+            onDismiss = { showAiOnboardingModal = false }
         )
     }
 

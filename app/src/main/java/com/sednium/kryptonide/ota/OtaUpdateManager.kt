@@ -19,6 +19,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 data class OtaReleaseInfo(
@@ -28,7 +29,9 @@ data class OtaReleaseInfo(
     val apkUrl: String,
     val apkSize: Long,
     val isNewer: Boolean,
-    val publishedAt: String = ""
+    val publishedAt: String = "",
+    /** GitHub release asset digest, e.g. "sha256:abc...". Empty on old releases. */
+    val apkDigest: String = ""
 )
 
 sealed class OtaCheckResult {
@@ -182,6 +185,7 @@ object OtaUpdateManager {
         val assets = releaseObj["assets"]?.jsonArray.orEmpty()
         var apkUrl = ""
         var apkSize = 0L
+        var apkDigest = ""
 
         for (assetElement in assets) {
             val asset = assetElement.jsonObject
@@ -189,6 +193,7 @@ object OtaUpdateManager {
             if (name.endsWith(".apk", ignoreCase = true)) {
                 apkUrl = asset["browser_download_url"]?.jsonPrimitive?.contentOrNull.orEmpty()
                 apkSize = asset["size"]?.jsonPrimitive?.longOrNull ?: 0L
+                apkDigest = asset["digest"]?.jsonPrimitive?.contentOrNull.orEmpty()
                 break
             }
         }
@@ -201,7 +206,8 @@ object OtaUpdateManager {
             apkUrl = apkUrl,
             apkSize = apkSize,
             isNewer = isNewer,
-            publishedAt = publishedAt
+            publishedAt = publishedAt,
+            apkDigest = apkDigest
         )
 
         return@withContext if (isNewer && apkUrl.isNotBlank()) {
@@ -270,6 +276,7 @@ object OtaUpdateManager {
         var downloadedBytes = 0L
         var lastTime = System.currentTimeMillis()
         var lastBytes = 0L
+        val sha256 = MessageDigest.getInstance("SHA-256")
 
         body.byteStream().use { input ->
             FileOutputStream(apkFile).use { output ->
@@ -278,6 +285,7 @@ object OtaUpdateManager {
 
                 while (input.read(buffer).also { bytesRead = it } != -1) {
                     output.write(buffer, 0, bytesRead)
+                    sha256.update(buffer, 0, bytesRead)
                     downloadedBytes += bytesRead
 
                     val now = System.currentTimeMillis()
@@ -307,6 +315,30 @@ object OtaUpdateManager {
                 }
                 output.flush()
             }
+        }
+
+        // GitHub publishes a SHA-256 digest for release assets. Verify it when
+        // present so a compromised CDN/redirect cannot swap the APK between
+        // the release API response and the download.
+        val expectedDigest = release.apkDigest
+            .substringAfter(':', release.apkDigest)
+            .trim()
+            .lowercase()
+        if (expectedDigest.length == 64) {
+            val actualDigest = buildString(64) {
+                for (b in sha256.digest()) append("%02x".format(b.toInt() and 0xff))
+            }
+            if (!actualDigest.equals(expectedDigest, ignoreCase = true)) {
+                apkFile.delete()
+                emit(OtaDownloadState.Error("APK checksum mismatch — update aborted"))
+                return@flow
+            }
+        }
+
+        if (release.apkSize > 0 && downloadedBytes != release.apkSize) {
+            apkFile.delete()
+            emit(OtaDownloadState.Error("APK download incomplete — update aborted"))
+            return@flow
         }
 
         emit(OtaDownloadState.ReadyToInstall(apkFile, release))

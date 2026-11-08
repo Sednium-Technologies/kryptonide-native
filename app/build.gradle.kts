@@ -22,13 +22,13 @@ plugins {
 
 android {
   namespace = "com.sednium.kryptonide"
-  compileSdk = 35
+  compileSdk = 37
   ndkVersion = "25.2.9519653"
 
   defaultConfig {
     applicationId = "com.sednium.kryptonide"
     minSdk = 26
-    targetSdk = 35
+    targetSdk = 37
     multiDexEnabled = true
     versionCode = 40
     versionName = "4.0"
@@ -155,12 +155,12 @@ dependencies {
   implementation("io.github.Rosemoe.sora-editor:language-java:0.23.6")
   implementation("io.github.Rosemoe.sora-editor:language-textmate:0.23.6")
 
-  implementation("org.eclipse.jgit:org.eclipse.jgit:6.8.0.202311291450-r")
-  implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:6.8.0.202311291450-r")
+  implementation(libs.jgit)
+  implementation(libs.jgit.ssh.jsch)
   implementation(platform(libs.androidx.compose.bom))
-  implementation("com.google.apis:google-api-services-drive:v3-rev20240123-2.0.0")
-  implementation("com.google.api-client:google-api-client-android:2.2.0")
-  implementation("com.google.http-client:google-http-client-gson:1.43.3")
+  implementation(libs.google.api.services.drive)
+  implementation(libs.google.api.client.android)
+  implementation(libs.google.http.client.gson)
   implementation(libs.androidx.activity.compose)
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
@@ -173,14 +173,14 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
-  implementation("androidx.security:security-crypto:1.1.0-alpha06")
+  implementation(libs.androidx.security.crypto)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
-  implementation("androidx.webkit:webkit:1.11.0")
+  implementation(libs.androidx.webkit)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
-  implementation(libs.logging.interceptor)
   implementation(libs.coil.compose)
+  implementation(libs.coil.network.okhttp)
   implementation(libs.okhttp)
   implementation(libs.okhttp.sse)
   implementation(libs.play.services.auth)

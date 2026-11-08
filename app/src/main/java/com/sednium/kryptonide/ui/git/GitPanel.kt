@@ -23,6 +23,10 @@ import com.composables.icons.lucide.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.window.Dialog
+import com.sednium.kryptonide.data.repository.ActionsRun
+import com.sednium.kryptonide.data.repository.ActionsJob
+import com.sednium.kryptonide.ui.theme.KryptonColorPalette
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
@@ -31,6 +35,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import com.sednium.kryptonide.utils.KryptonHaptics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -43,7 +49,7 @@ import com.sednium.kryptonide.ui.theme.KryptonColors
 import com.sednium.kryptonide.ui.theme.LocalKryptonColors
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.painterResource
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.sednium.kryptonide.R
 import com.sednium.kryptonide.ota.GitHubIssuesView
 
@@ -85,10 +91,28 @@ private fun getLanguageColor(language: String?): Color {
 // ── GitPanel ──────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GitPanel(gitVm: GitViewModel) {
+fun GitPanel(
+    gitVm: GitViewModel,
+    onNavigateToAi: ((String) -> Unit)? = null,
+    onOpenFileInEditor: ((String) -> Unit)? = null
+) {
     val state  by gitVm.state.collectAsStateWithLifecycle()
+    val workflowLogs by gitVm.workflowLogs.collectAsStateWithLifecycle()
     val colors = LocalKryptonColors.current
+    val context = LocalContext.current
+    val view = LocalView.current
     var selectedGitSubTab by remember { mutableStateOf(0) } // 0 = Repository, 1 = Issues
+    var selectedDiffFile by remember { mutableStateOf<GitChangedFile?>(null) }
+
+    LaunchedEffect(onNavigateToAi) {
+        gitVm.onSendToAi = onNavigateToAi
+    }
+
+    LaunchedEffect(state.statusMessage, state.isError) {
+        if (state.statusMessage?.startsWith("Pushed to") == true && !state.isError) {
+            KryptonHaptics.success(context, view)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(colors.Background)) {
 
@@ -140,7 +164,10 @@ fun GitPanel(gitVm: GitViewModel) {
                     .weight(1f)
                     .clip(RoundedCornerShape(7.dp))
                     .background(if (selectedGitSubTab == 0) colors.Surface else Color.Transparent)
-                    .clickable { selectedGitSubTab = 0 }
+                    .clickable { 
+                        KryptonHaptics.click(context, view)
+                        selectedGitSubTab = 0 
+                    }
                     .padding(vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -160,7 +187,10 @@ fun GitPanel(gitVm: GitViewModel) {
                     .weight(1f)
                     .clip(RoundedCornerShape(7.dp))
                     .background(if (selectedGitSubTab == 1) colors.Surface else Color.Transparent)
-                    .clickable { selectedGitSubTab = 1 }
+                    .clickable { 
+                        KryptonHaptics.click(context, view)
+                        selectedGitSubTab = 1 
+                    }
                     .padding(vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -210,83 +240,80 @@ fun GitPanel(gitVm: GitViewModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding      = PaddingValues(vertical = 14.dp)
             ) {
-            if (state.githubUser == null) {
-                item {
-                    GitSignInSection(
-                        state,
-                        { gitVm.setTokenInput(it) },
-                        { gitVm.signIn() },
-                        { gitVm.startDeviceSignIn() },
-                        { gitVm.cancelDeviceSignIn() },
-                        colors
-                    )
-                }
-            } else {
-                item { GitUserSection(state, { gitVm.signOut() }, colors) }
-                item {
-                    LinkedRepoSection(
-                        linkedRepo     = state.linkedRepo,
-                        repos          = state.repos,
-                        isLoadingRepos = state.isLoadingRepos,
-                        isPushing      = state.isPushing,
-                        onLoadRepos    = { gitVm.loadRepos() },
-                        onLinkRepo     = { gitVm.linkRepo(it) },
-                        onUnlink       = { gitVm.unlinkRepo() },
-                        onPush         = { gitVm.push(it) },
-                        onCreateRepo   = { n, d, p -> gitVm.createRepo(n, d, p) },
-                        colors         = colors
-                    )
-                }
-                state.linkedRepo?.let { linked ->
+                if (state.githubUser == null) {
                     item {
-                        var showCloudBuild by remember { mutableStateOf(false) }
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(colors.Surface)
-                                .border(1.dp, colors.Border, RoundedCornerShape(12.dp))
-                                .padding(14.dp)
-                        ) {
-                            Text("Cloud Build", color = colors.OnBackground, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "Build a debug APK on GitHub's own runners instead of on-device. Push your latest changes first.",
-                                color = colors.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
+                        GitSignInSection(
+                            state,
+                            { gitVm.setTokenInput(it) },
+                            { gitVm.signIn() },
+                            { gitVm.startDeviceSignIn() },
+                            { gitVm.cancelDeviceSignIn() },
+                            colors
+                        )
+                    }
+                } else {
+                    item { GitUserSection(state, { gitVm.signOut() }, colors) }
+                    item {
+                        LinkedRepoSection(
+                            gitVm          = gitVm,
+                            linkedRepo     = state.linkedRepo,
+                            repos          = state.repos,
+                            isLoadingRepos = state.isLoadingRepos,
+                            isPushing      = state.isPushing,
+                            onLoadRepos    = { gitVm.loadRepos() },
+                            onLinkRepo     = { gitVm.linkRepo(it) },
+                            onUnlink       = { gitVm.unlinkRepo() },
+                            onPush         = { gitVm.push(it) },
+                            onCreateRepo   = { n, d, p -> gitVm.createRepo(n, d, p) },
+                            onDiffClick    = { selectedDiffFile = it },
+                            colors         = colors
+                        )
+                    }
+                    state.linkedRepo?.let { linked ->
+                        item {
+                            CloudBuildCard(
+                                gitVm      = gitVm,
+                                linkedRepo = linked,
+                                colors     = colors
                             )
-                            Button(
-                                onClick = { showCloudBuild = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = colors.Primary)
-                            ) {
-                                Icon(Lucide.CloudUpload, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Build via GitHub Actions")
-                            }
-                        }
-
-                        if (showCloudBuild) {
-                            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                            ModalBottomSheet(
-                                onDismissRequest = { showCloudBuild = false },
-                                sheetState = sheetState,
-                                containerColor = colors.Surface
-                            ) {
-                                val parts = linked.split("/")
-                                if (parts.size == 2) {
-                                    GithubActionsBuildSheet(
-                                        owner = parts[0],
-                                        repo = parts[1],
-                                        onDismiss = { showCloudBuild = false }
-                                    )
-                                }
-                            }
                         }
                     }
                 }
             }
         }
     }
-}
+
+    selectedDiffFile?.let { diffFile ->
+        GitDiffViewerDialog(
+            changedFile    = diffFile,
+            colors         = colors,
+            onDismiss      = { selectedDiffFile = null },
+            onOpenInEditor = {
+                onOpenFileInEditor?.invoke(diffFile.relativePath)
+                selectedDiffFile = null
+            }
+        )
+    }
+
+    workflowLogs?.let { logsState ->
+        WorkflowLogsSheet(
+            logsState   = logsState,
+            colors      = colors,
+            onDismiss   = { gitVm.closeWorkflowLogs() },
+            onSelectJob = { gitVm.selectLogStep(it) },
+            onSendToAi  = {
+                gitVm.sendRunFailureToAi(
+                    ActionsRun(
+                        id = logsState.runId,
+                        status = logsState.status,
+                        run_number = logsState.runNumber,
+                        name = logsState.workflowName
+                    ),
+                    logsState.rawLogText
+                )
+            }
+        )
+    }
 }
 
 // ── Sign-in section ───────────────────────────────────────────────────────────
@@ -301,6 +328,7 @@ private fun GitSignInSection(
     colors:           com.sednium.kryptonide.ui.theme.KryptonColorPalette
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val tokenUrl = "https://github.com/settings/tokens/new?scopes=repo,read:user&description=Kryptonide"
     var showToken by remember { mutableStateOf(false) }
     var showPatFallback by remember { mutableStateOf(false) }
@@ -800,6 +828,7 @@ private fun GitUserSection(
     colors:   com.sednium.kryptonide.ui.theme.KryptonColorPalette
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val user = state.githubUser ?: return
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -908,6 +937,7 @@ private fun GitUserSection(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LinkedRepoSection(
+    gitVm:          GitViewModel,
     linkedRepo:     String?,
     repos:          List<com.sednium.kryptonide.data.repository.GitHubRepo>,
     isLoadingRepos: Boolean,
@@ -917,12 +947,20 @@ private fun LinkedRepoSection(
     onUnlink:       () -> Unit,
     onPush:         (String) -> Unit,
     onCreateRepo:   (String, String, Boolean) -> Unit,
+    onDiffClick:    (GitChangedFile) -> Unit,
     colors:         com.sednium.kryptonide.ui.theme.KryptonColorPalette
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     var commitMsg        by remember { mutableStateOf("") }
     var showRepoPicker   by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showCreateBranchDialog by remember { mutableStateOf(false) }
+    var selectedSheetTab by remember { mutableStateOf(0) } // 0 = Repos, 1 = Branches
+
+    val changedFiles by gitVm.changedFiles.collectAsStateWithLifecycle()
+    val selectedBranch by gitVm.selectedBranch.collectAsStateWithLifecycle()
+    val branches by gitVm.branches.collectAsStateWithLifecycle()
 
     val activeRepoObj = remember(linkedRepo, repos) {
         repos.firstOrNull { it.full_name == linkedRepo }
@@ -1131,12 +1169,132 @@ private fun LinkedRepoSection(
                             Icon(Lucide.Upload, null, tint = colors.Primary, modifier = Modifier.size(15.dp))
                             Text("Commit & Push", color = colors.OnBackground, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
-                        TextButton(
-                            onClick = { onLoadRepos(); showRepoPicker = true },
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                            modifier = Modifier.height(24.dp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            // Branch switcher chip
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(colors.SurfaceVar)
+                                    .clickable {
+                                        gitVm.loadBranches()
+                                        selectedSheetTab = 1
+                                        showRepoPicker = true
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(Lucide.GitBranch, null, tint = colors.Primary, modifier = Modifier.size(11.dp))
+                                    Text(selectedBranch, color = colors.OnBackground, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            TextButton(
+                                onClick = { 
+                                    onLoadRepos()
+                                    selectedSheetTab = 0
+                                    showRepoPicker = true 
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                modifier = Modifier.height(24.dp)
+                            ) {
+                                Text("Switch Repo", color = colors.Primary, fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // ── Changed Files (N) List & Diff Trigger ──────────────────
+                    val allSelected = changedFiles.isNotEmpty() && changedFiles.all { it.selected }
+                    if (changedFiles.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.SurfaceVar.copy(alpha = 0.55f))
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("Switch Repo", color = colors.Primary, fontSize = 11.sp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Checkbox(
+                                        checked = allSelected,
+                                        onCheckedChange = { gitVm.selectAllFiles(it) },
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        "Changed Files (${changedFiles.size})",
+                                        color = colors.OnBackground,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { gitVm.selectAllFiles(!allSelected) },
+                                    contentPadding = PaddingValues(0.dp),
+                                    modifier = Modifier.height(20.dp)
+                                ) {
+                                    Text(if (allSelected) "Deselect All" else "Select All", fontSize = 10.sp, color = colors.Primary)
+                                }
+                            }
+
+                            changedFiles.forEach { file ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable { onDiffClick(file) }
+                                        .padding(vertical = 4.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = file.selected,
+                                        onCheckedChange = { gitVm.toggleFileSelected(file.relativePath) },
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    val (badgeText, badgeBg, badgeColor) = when (file.status) {
+                                        ChangeStatus.MODIFIED -> Triple("M", Color(0x26D29922), Color(0xFFD29922))
+                                        ChangeStatus.ADDED -> Triple("A", Color(0x262EA043), Color(0xFF2EA043))
+                                        ChangeStatus.DELETED -> Triple("D", Color(0x26F85149), Color(0xFFF85149))
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(badgeBg),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(badgeText, color = badgeColor, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        file.relativePath,
+                                        color = colors.OnBackground,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "+${file.addedLines} -${file.removedLines}",
+                                        color = if (file.addedLines > 0) Color(0xFF2EA043) else Color(0xFFF85149),
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -1156,7 +1314,12 @@ private fun LinkedRepoSection(
                     )
 
                     Button(
-                        onClick  = { if (commitMsg.isNotBlank()) onPush(commitMsg) },
+                        onClick  = { 
+                            if (commitMsg.isNotBlank()) {
+                                KryptonHaptics.click(context, view)
+                                onPush(commitMsg) 
+                            }
+                        },
                         enabled  = !isPushing && commitMsg.isNotBlank(),
                         modifier = Modifier.fillMaxWidth().height(42.dp),
                         colors   = ButtonDefaults.buttonColors(containerColor = colors.Primary, contentColor = colors.OnPrimary),
@@ -1169,7 +1332,7 @@ private fun LinkedRepoSection(
                         } else {
                             GitHubIcon(Modifier.size(14.dp), tint = colors.OnPrimary)
                             Spacer(Modifier.width(6.dp))
-                            Text("Push to ${activeRepoObj?.default_branch ?: "main"}", color = colors.OnPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Push to $selectedBranch", color = colors.OnPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -1285,24 +1448,11 @@ private fun LinkedRepoSection(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                "Select Repository",
+                                "Repository & Branches",
                                 color = colors.OnBackground,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .background(colors.SurfaceVar)
-                                    .padding(horizontal = 7.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    "${repos.size}",
-                                    color = colors.Muted,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
                         }
 
                         IconButton(
@@ -1310,6 +1460,51 @@ private fun LinkedRepoSection(
                             modifier = Modifier.size(28.dp)
                         ) {
                             Icon(Lucide.X, "Close", tint = colors.Muted, modifier = Modifier.size(16.dp))
+                        }
+                    }
+
+                    // Tab Switcher: Repositories vs Branches
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(colors.SurfaceVar)
+                            .padding(2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (selectedSheetTab == 0) colors.Surface else Color.Transparent)
+                                .clickable { selectedSheetTab = 0 }
+                                .padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Repositories (${repos.size})",
+                                color = if (selectedSheetTab == 0) colors.OnBackground else colors.Muted,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (selectedSheetTab == 0) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (selectedSheetTab == 1) colors.Surface else Color.Transparent)
+                                .clickable { selectedSheetTab = 1 }
+                                .padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Branches (${branches.size})",
+                                color = if (selectedSheetTab == 1) colors.OnBackground else colors.Muted,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (selectedSheetTab == 1) FontWeight.Bold else FontWeight.Medium
+                            )
                         }
                     }
 
@@ -1355,7 +1550,90 @@ private fun LinkedRepoSection(
 
                 HorizontalDivider(color = colors.Border.copy(alpha = 0.5f), thickness = 0.5.dp)
 
-                if (isLoadingRepos) {
+                if (selectedSheetTab == 1) {
+                    // Branches Tab
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Active: $selectedBranch", color = colors.OnBackground, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        TextButton(
+                            onClick = { showCreateBranchDialog = true },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(26.dp)
+                        ) {
+                            Icon(Lucide.Plus, null, tint = colors.Primary, modifier = Modifier.size(12.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("New Branch", color = colors.Primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    if (branches.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                            Text("No remote branches found", color = colors.Muted, fontSize = 12.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(branches) { branch ->
+                                val isSelected = branch == selectedBranch
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            gitVm.selectBranch(branch)
+                                            showRepoPicker = false
+                                        },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSelected) colors.Primary.copy(alpha = 0.08f) else colors.Surface
+                                    ),
+                                    border = BorderStroke(
+                                        if (isSelected) 1.dp else 0.5.dp,
+                                        if (isSelected) colors.Primary else colors.Border.copy(alpha = 0.7f)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Icon(
+                                                Lucide.GitBranch,
+                                                null,
+                                                tint = if (isSelected) colors.Primary else colors.Muted,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                branch,
+                                                color = colors.OnBackground,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        }
+                                        if (isSelected) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(colors.Success.copy(alpha = 0.15f))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("ACTIVE", color = colors.Success, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (isLoadingRepos) {
                     Box(
                         modifier = Modifier.fillMaxWidth().height(220.dp),
                         contentAlignment = Alignment.Center
@@ -1663,5 +1941,615 @@ private fun LinkedRepoSection(
                 }
             }
         )
+    }
+
+    if (showCreateBranchDialog) {
+        var newBranchName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showCreateBranchDialog = false },
+            containerColor = colors.Surface,
+            shape = RoundedCornerShape(16.dp),
+            title = { Text("Create New Branch", color = colors.OnBackground, fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Base branch: $selectedBranch", color = colors.Muted, fontSize = 11.5.sp)
+                    OutlinedTextField(
+                        value = newBranchName,
+                        onValueChange = { newBranchName = it },
+                        placeholder = { Text("feature/my-new-branch") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            focusedBorderColor = colors.Primary,
+                            unfocusedBorderColor = colors.Border,
+                            textColor = colors.OnBackground
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newBranchName.isNotBlank()) {
+                            gitVm.createBranch(newBranchName.trim())
+                            showCreateBranchDialog = false
+                        }
+                    },
+                    enabled = newBranchName.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.Primary, contentColor = colors.OnPrimary),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Create Branch", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateBranchDialog = false }) {
+                    Text("Cancel", color = colors.Muted)
+                }
+            }
+        )
+    }
+}
+
+// ── Cloud Build Card (Persistent Build Engine & Runs) ─────────────────────────
+@Composable
+private fun CloudBuildCard(
+    gitVm: GitViewModel,
+    linkedRepo: String,
+    colors: KryptonColorPalette
+) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    val activeRun by gitVm.activeWorkflowRun.collectAsStateWithLifecycle()
+    val recentRuns by gitVm.recentRuns.collectAsStateWithLifecycle()
+    val selectedBranch by gitVm.selectedBranch.collectAsStateWithLifecycle()
+    val parts = linkedRepo.split("/")
+    val owner = parts.getOrNull(0) ?: ""
+    val repo = parts.getOrNull(1) ?: linkedRepo
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.Surface),
+        border = BorderStroke(1.dp, colors.Border)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Lucide.Cpu, null, tint = colors.Primary, modifier = Modifier.size(15.dp))
+                    Text("Cloud Build Engine", color = colors.OnBackground, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+                IconButton(onClick = { gitVm.refreshRecentRuns() }, modifier = Modifier.size(24.dp)) {
+                    Icon(Lucide.RefreshCw, "Refresh", tint = colors.Muted, modifier = Modifier.size(13.dp))
+                }
+            }
+
+            // Live Active Build Banner (persists across navigation)
+            activeRun?.let { active ->
+                val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                val pulseAlpha by infiniteTransition.animateFloat(
+                    initialValue = 0.3f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(800, easing = LinearEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "pulseAlpha"
+                )
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = colors.Primary.copy(alpha = 0.08f)),
+                    border = BorderStroke(1.dp, colors.Primary.copy(alpha = 0.35f))
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(colors.Primary.copy(alpha = pulseAlpha))
+                                )
+                                Text(
+                                    "Building APK (Step ${active.stepIndex}/${active.totalSteps})",
+                                    color = colors.Primary,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            val minutes = active.elapsedSeconds / 60
+                            val seconds = active.elapsedSeconds % 60
+                            Text(
+                                String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds),
+                                color = colors.Muted,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+
+                        Text(
+                            active.currentStep.ifBlank { "Initializing runner…" },
+                            color = colors.OnBackground,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        val progressFraction = if (active.totalSteps > 0) (active.stepIndex.toFloat() / active.totalSteps.toFloat()).coerceIn(0.05f, 1f) else 0.2f
+                        LinearProgressIndicator(
+                            progress = { progressFraction },
+                            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                            color = colors.Primary,
+                            trackColor = colors.Primary.copy(alpha = 0.2f)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    gitVm.openWorkflowLogs(
+                                        ActionsRun(
+                                            id = active.runId,
+                                            status = active.status,
+                                            run_number = active.runNumber,
+                                            name = active.workflowName
+                                        )
+                                    )
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(26.dp)
+                            ) {
+                                Icon(Lucide.FileText, null, tint = colors.Primary, modifier = Modifier.size(12.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Live Logs", color = colors.Primary, fontSize = 11.sp)
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(
+                                onClick = { gitVm.cancelActiveBuild() },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(26.dp)
+                            ) {
+                                Icon(Lucide.CircleStop, null, tint = colors.Error, modifier = Modifier.size(12.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Cancel", color = colors.Error, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Trigger Button
+            if (activeRun == null) {
+                Button(
+                    onClick = {
+                        KryptonHaptics.click(context, view)
+                        gitVm.startCloudBuild(owner, repo, selectedBranch)
+                    },
+                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.Primary, contentColor = colors.OnPrimary),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Lucide.Play, null, modifier = Modifier.size(14.dp), tint = colors.OnPrimary)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Build via GitHub Actions ($selectedBranch)", color = colors.OnPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            // Recent Runs Section
+            if (recentRuns.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Recent Workflow Runs",
+                    color = colors.Muted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                recentRuns.take(5).forEach { run ->
+                    RecentRunRow(
+                        run = run,
+                        colors = colors,
+                        onLogsClick = { gitVm.openWorkflowLogs(run) },
+                        onDownloadApk = {
+                            gitVm.downloadApk(run) { apkFile ->
+                                android.widget.Toast.makeText(context, "APK saved: ${apkFile.name}", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        onFixWithAi = {
+                            gitVm.sendRunFailureToAi(run, null)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Recent Run Row ────────────────────────────────────────────────────────────
+@Composable
+private fun RecentRunRow(
+    run: ActionsRun,
+    colors: KryptonColorPalette,
+    onLogsClick: () -> Unit,
+    onDownloadApk: () -> Unit,
+    onFixWithAi: () -> Unit
+) {
+    val isSuccess = run.conclusion == "success"
+    val isFailure = run.conclusion == "failure" || run.conclusion == "timed_out"
+    val isInProgress = run.status == "in_progress" || run.status == "queued"
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.SurfaceVar.copy(alpha = 0.45f))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        when {
+            isSuccess -> Icon(Lucide.CircleCheck, null, tint = colors.Success, modifier = Modifier.size(16.dp))
+            isFailure -> Icon(Lucide.CircleX, null, tint = colors.Error, modifier = Modifier.size(16.dp))
+            isInProgress -> CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.Primary)
+            else -> Icon(Lucide.CircleMinus, null, tint = colors.Muted, modifier = Modifier.size(16.dp))
+        }
+
+        Spacer(Modifier.width(8.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "#${run.run_number}",
+                    color = colors.OnBackground,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    run.name.ifBlank { "Build Android APK" },
+                    color = colors.OnBackground,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (run.head_branch.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(colors.SurfaceVar)
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Text(run.head_branch, color = colors.Muted, fontSize = 9.5.sp, fontFamily = FontFamily.Monospace)
+                    }
+                }
+                if (run.head_sha.isNotBlank()) {
+                    Text(run.head_sha.take(7), color = colors.Muted, fontSize = 9.5.sp, fontFamily = FontFamily.Monospace)
+                }
+                if (run.created_at.isNotBlank()) {
+                    Text(run.created_at.take(10), color = colors.Muted, fontSize = 9.5.sp)
+                }
+            }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            IconButton(onClick = onLogsClick, modifier = Modifier.size(28.dp)) {
+                Icon(Lucide.FileText, "Logs", tint = colors.Muted, modifier = Modifier.size(14.dp))
+            }
+            if (isSuccess) {
+                IconButton(onClick = onDownloadApk, modifier = Modifier.size(28.dp)) {
+                    Icon(Lucide.Download, "Download APK", tint = colors.Success, modifier = Modifier.size(14.dp))
+                }
+            }
+            if (isFailure) {
+                TextButton(
+                    onClick = onFixWithAi,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    modifier = Modifier.height(24.dp)
+                ) {
+                    Icon(Lucide.Sparkles, null, tint = colors.Primary, modifier = Modifier.size(12.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text("Fix", color = colors.Primary, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+// ── Git Diff Viewer Dialog ────────────────────────────────────────────────────
+@Composable
+fun GitDiffViewerDialog(
+    changedFile: GitChangedFile,
+    colors: KryptonColorPalette,
+    onDismiss: () -> Unit,
+    onOpenInEditor: () -> Unit
+) {
+    val diffLines = remember(changedFile.diffPatch) {
+        changedFile.diffPatch.lines()
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = colors.Surface),
+            border = BorderStroke(1.dp, colors.Border)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Top Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val (badgeText, badgeBg, badgeColor) = when (changedFile.status) {
+                                ChangeStatus.MODIFIED -> Triple("M", Color(0x26D29922), Color(0xFFD29922))
+                                ChangeStatus.ADDED -> Triple("A", Color(0x262EA043), Color(0xFF2EA043))
+                                ChangeStatus.DELETED -> Triple("D", Color(0x26F85149), Color(0xFFF85149))
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(badgeBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(badgeText, color = badgeColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Text(
+                                changedFile.relativePath,
+                                color = colors.OnBackground,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "+${changedFile.addedLines} -${changedFile.removedLines}",
+                            color = if (changedFile.addedLines > 0) Color(0xFF2EA043) else Color(0xFFF85149),
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(
+                            onClick = onOpenInEditor,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(Lucide.ExternalLink, null, tint = colors.Primary, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Open in Editor", color = colors.Primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                            Icon(Lucide.X, "Close", tint = colors.Muted, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = colors.Border, thickness = 0.5.dp)
+
+                // Diff viewport
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF0D1117))
+                        .padding(vertical = 4.dp)
+                ) {
+                    items(diffLines) { line ->
+                        val (bgColor, textColor) = when {
+                            line.startsWith("+") && !line.startsWith("+++") -> Color(0x262EA043) to Color(0xFF3FB950)
+                            line.startsWith("-") && !line.startsWith("---") -> Color(0x26F85149) to Color(0xFFF85149)
+                            line.startsWith("@@") -> Color(0x1A58A6FF) to Color(0xFF58A6FF)
+                            else -> Color.Transparent to Color(0xFFC9D1D9)
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(bgColor)
+                                .padding(horizontal = 8.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = line,
+                                color = textColor,
+                                fontSize = 11.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Workflow Logs Sheet ───────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WorkflowLogsSheet(
+    logsState: WorkflowLogsState,
+    colors: KryptonColorPalette,
+    onDismiss: () -> Unit,
+    onSelectJob: (Long) -> Unit,
+    onSendToAi: () -> Unit
+) {
+    val context = LocalContext.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = colors.Surface,
+        dragHandle = null
+    ) {
+        Column(modifier = Modifier.fillMaxHeight(0.9f)) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "${logsState.workflowName} #${logsState.runNumber}",
+                        color = colors.OnBackground,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    val isFail = logsState.status == "completed" && logsState.conclusion != "success"
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(if (isFail) colors.Error.copy(alpha = 0.15f) else colors.Success.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            logsState.conclusion ?: logsState.status,
+                            color = if (isFail) colors.Error else colors.Success,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(
+                        onClick = {
+                            clipboard.setText(androidx.compose.ui.text.AnnotatedString(logsState.rawLogText))
+                            android.widget.Toast.makeText(context, "Logs copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Lucide.Copy, "Copy Logs", tint = colors.Muted, modifier = Modifier.size(15.dp))
+                    }
+
+                    Button(
+                        onClick = {
+                            onSendToAi()
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.Primary, contentColor = colors.OnPrimary),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Icon(Lucide.Sparkles, null, tint = colors.OnPrimary, modifier = Modifier.size(12.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Send to AI & Fix", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Lucide.X, "Close", tint = colors.Muted, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+
+            // Job pills if multiple jobs
+            if (logsState.jobs.isNotEmpty()) {
+                androidx.compose.foundation.lazy.LazyRow(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(logsState.jobs) { job ->
+                        val isSelected = job.id == logsState.selectedJobId
+                        val isJobFail = job.conclusion == "failure"
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isSelected) colors.Primary.copy(alpha = 0.2f) else colors.SurfaceVar)
+                                .border(0.5.dp, if (isSelected) colors.Primary else Color.Transparent, RoundedCornerShape(6.dp))
+                                .clickable { onSelectJob(job.id) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(
+                                    if (isJobFail) Lucide.CircleX else Lucide.CircleCheck,
+                                    null,
+                                    tint = if (isJobFail) colors.Error else colors.Success,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    job.name,
+                                    color = if (isSelected) colors.Primary else colors.OnBackground,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = colors.Border, thickness = 0.5.dp)
+
+            // Log output viewport
+            if (logsState.isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = colors.Primary, modifier = Modifier.size(32.dp))
+                }
+            } else {
+                val logLines = remember(logsState.rawLogText) { logsState.rawLogText.lines() }
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF0D1117))
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    items(logLines) { line ->
+                        val textColor = when {
+                            line.contains("ERROR:", ignoreCase = true) || line.contains("FAILURE:", ignoreCase = true) || line.startsWith("e: ") -> Color(0xFFF85149)
+                            line.contains("BUILD SUCCESSFUL", ignoreCase = true) -> Color(0xFF3FB950)
+                            line.contains("WARNING:", ignoreCase = true) || line.startsWith("w: ") -> Color(0xFFE3B341)
+                            else -> Color(0xFFC9D1D9)
+                        }
+                        Text(
+                            text = line,
+                            color = textColor,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+        }
     }
 }

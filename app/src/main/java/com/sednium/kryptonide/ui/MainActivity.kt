@@ -70,12 +70,6 @@ class MainActivity : ComponentActivity() {
         com.sednium.kryptonide.agent.pocket.LocalGgufServerManager.appContext = applicationContext
         com.sednium.kryptonide.agent.notifications.AiNotificationHelper.createNotificationChannel(this)
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
-            }
-        }
-
         handleNavigationIntent(intent)
 
         setContent {
@@ -134,7 +128,14 @@ class MainActivity : ComponentActivity() {
                             KryptonSplashScreen(
                                 isDark = isDark,
                                 minDurationMs = 2000L,
-                                onFinished = { showBootSplash = false }
+                                onFinished = {
+                                    showBootSplash = false
+                                    val onboardingPrefs = getSharedPreferences("krypton_onboarding", android.content.Context.MODE_PRIVATE)
+                                    val isComplete = onboardingPrefs.getBoolean("onboarding_complete", false)
+                                    if (isComplete) {
+                                        requestNotificationPermissionIfNeeded()
+                                    }
+                                }
                             )
                         }
                     }
@@ -158,6 +159,14 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleNavigationIntent(intent)
+    }
+
+    fun requestNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
     }
 
     private fun handleNavigationIntent(intent: Intent?) {
@@ -194,6 +203,7 @@ fun KryptonApp(
             onFinished = {
                 onboardingPrefs.edit().putBoolean("onboarding_complete", true).apply()
                 isOnboardingComplete = true
+                (context as? MainActivity)?.requestNotificationPermissionIfNeeded()
             }
         )
         return
@@ -201,7 +211,6 @@ fun KryptonApp(
 
     val projectsState  by projectsVm.state.collectAsState()
     val currentProjectId = projectsState.currentProjectId
-    var isProjectOpening by remember { mutableStateOf(false) }
 
     var postUpgradeNotes by remember { mutableStateOf<String?>(null) }
     var availableOtaRelease by remember { mutableStateOf<com.sednium.kryptonide.ota.OtaReleaseInfo?>(null) }
@@ -239,7 +248,6 @@ fun KryptonApp(
             ProjectsDashboard(
                 viewModel     = projectsVm,
                 onOpenProject = {
-                    isProjectOpening = true
                     projectsVm.openProject(it)
                 }
             )
@@ -258,15 +266,6 @@ fun KryptonApp(
                                     ?: "/sdcard/Kryptonide/${currentProject?.name ?: ""}",
                 template      = currentProject?.template ?: ProjectTemplate.BLANK,
                 onBack        = { projectsVm.closeProject() }
-            )
-        }
-
-        if (isProjectOpening) {
-            KryptonSplashScreen(
-                isDark = isDark,
-                statusText = "OPENING WORKSPACE",
-                minDurationMs = 1100L,
-                onFinished = { isProjectOpening = false }
             )
         }
 

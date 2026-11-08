@@ -48,7 +48,15 @@ object MonacoRuntime : MonacoBridge.MonacoEventListener {
                 wv.settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
-                    allowFileAccess = true
+                    // The runtime only executes the bundled shim plus local
+                    // user plugins. It never needs raw file/content access.
+                    allowFileAccess = false
+                    allowContentAccess = false
+                    allowFileAccessFromFileURLs = false
+                    allowUniversalAccessFromFileURLs = false
+                    javaScriptCanOpenWindowsAutomatically = false
+                    setSafeBrowsingEnabled(true)
+                    mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 }
                 wv.addJavascriptInterface(MonacoBridge(this), "KryptonNative")
                 wv.webViewClient = object : WebViewClient() {

@@ -32,7 +32,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import com.sednium.kryptonide.utils.KryptonHaptics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -625,8 +628,9 @@ fun EditorScreen(
                 }
             },
             bottomBar = {
-                val isKeyboardOpen = WindowInsets.ime.asPaddingValues().calculateBottomPadding() > 0.dp
-                if (activeTab != "run" && activeTab != "build" && !(activeTab == "ai" && isKeyboardOpen)) {
+                val density = LocalDensity.current
+                val isKeyboardOpen = WindowInsets.ime.getBottom(density) > 0 || WindowInsets.ime.asPaddingValues().calculateBottomPadding() > 0.dp
+                if (activeTab != "run" && activeTab != "build" && !isKeyboardOpen && !showTerminalSheet) {
                     EditorBottomNav(
                         activeTab      = activeTab,
                         isGitHubOpen   = activeTab == "github",
@@ -645,75 +649,85 @@ fun EditorScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
             ) {
-                // Editor surface — always in the tree; covered by overlay when inactive.
-                Box(
+                // Editor surface & Quick-Symbol Bar arranged in a strict non-overlapping Column
+                Column(
                     modifier = Modifier
-                    .fillMaxSize()
-                    .offset(x = if (activeTab == "editor") 0.dp else 4000.dp)
-                    .padding(bottom = if (activeFileId != null && activeTab == "editor") 48.dp else 0.dp)
+                        .fillMaxSize()
+                        .offset(x = if (activeTab == "editor") 0.dp else 4000.dp)
+                        .imePadding()
                 ) {
-                    AndroidView(
-                        factory  = { soraHost.createView(it) },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        AndroidView(
+                            factory  = { soraHost.createView(it) },
+                            update   = { editor ->
+                                if (editor.isWordwrap != settingsState.wordWrap) {
+                                    editor.isWordwrap = settingsState.wordWrap
+                                }
+                                if (editor.isLineNumberEnabled != settingsState.lineNumbers) {
+                                    editor.isLineNumberEnabled = settingsState.lineNumbers
+                                }
+                                if (editor.isBlockLineEnabled != settingsState.indentationGuides) {
+                                    editor.isBlockLineEnabled = settingsState.indentationGuides
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
 
-                    if (activeFileId == null && activeTab == "editor") {
-                        val kc = LocalKryptonColors.current
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(kc.Background),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.padding(32.dp)
+                        if (activeFileId == null && activeTab == "editor") {
+                            val kc = LocalKryptonColors.current
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(kc.Background),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = Lucide.FileCode,
-                                    contentDescription = null,
-                                    tint = kc.Muted.copy(alpha = 0.45f),
-                                    modifier = Modifier.size(48.dp)
-                                )
-                                Text(
-                                    text = "No File Open",
-                                    color = kc.OnBackground,
-                                    fontSize = 16.sp,
-                                    fontFamily = UrbanistFontFamily,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = "Select or create a file from the File Explorer to start coding.",
-                                    color = kc.Muted,
-                                    fontSize = 13.sp,
-                                    fontFamily = UrbanistFontFamily
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Button(
-                                    onClick = { scope.launch { drawerState.open() } },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = kc.Primary,
-                                        contentColor = kc.OnPrimary
-                                    ),
-                                    shape = RoundedCornerShape(10.dp)
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.padding(32.dp)
                                 ) {
-                                    Icon(Lucide.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Open File Explorer", fontSize = 13.sp, fontFamily = UrbanistFontFamily, fontWeight = FontWeight.SemiBold)
+                                    Icon(
+                                        imageVector = Lucide.FileCode,
+                                        contentDescription = null,
+                                        tint = kc.Muted.copy(alpha = 0.45f),
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Text(
+                                        text = "No File Open",
+                                        color = kc.OnBackground,
+                                        fontSize = 16.sp,
+                                        fontFamily = UrbanistFontFamily,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Select or create a file from the File Explorer to start coding.",
+                                        color = kc.Muted,
+                                        fontSize = 13.sp,
+                                        fontFamily = UrbanistFontFamily
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Button(
+                                        onClick = { scope.launch { drawerState.open() } },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = kc.Primary,
+                                            contentColor = kc.OnPrimary
+                                        ),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Lucide.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Open File Explorer", fontSize = 13.sp, fontFamily = UrbanistFontFamily, fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                if (activeTab == "editor" && activeFileId != null) {
-                    Box(
-                        modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .imePadding()
-                    ) {
+                    if (activeTab == "editor" && activeFileId != null) {
                         EditorShortcutsBar(
                             onInsert = { text -> soraHost.insertText(text) },
                             onUndo = { soraHost.undo() },
@@ -759,7 +773,23 @@ fun EditorScreen(
                                     onBack      = { activeTab = "editor" },
                                     onOpenGitHub = { activeTab = "github" }
                                 )
-                                "github"   -> GitPanel(gitVm = gitVm)
+                                "github"   -> GitPanel(
+                                    gitVm = gitVm,
+                                    onNavigateToAi = { prompt ->
+                                        activeTab = "ai"
+                                        aiVm.sendMessage(prompt, "")
+                                    },
+                                    onOpenFileInEditor = { relativePath ->
+                                        activeTab = "editor"
+                                        val fileMap = editorVm.state.value.files
+                                        val matched = fileMap.values.firstOrNull {
+                                            editorVm.buildPath(it, fileMap).equals(relativePath, ignoreCase = true) || it.name.equals(relativePath, ignoreCase = true)
+                                        }
+                                        if (matched != null) {
+                                            editorVm.openFile(matched.id)
+                                        }
+                                    }
+                                )
                                 "ai"       -> LarryAIPanel(
                                     activeFileName   = activeFileName,
                                     aiVm             = aiVm,
@@ -896,11 +926,10 @@ fun EditorShortcutsBar(
     modifier: Modifier = Modifier,
 ) {
     val kc = LocalKryptonColors.current
-    val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val view = LocalView.current
     val performTick = {
-        if (hapticsEnabled) {
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        }
+        KryptonHaptics.tick(context, view)
     }
     val keys = listOf(
         "Tab" to "\t", "{" to "{", "}" to "}", "(" to "(", ")" to ")",
@@ -1083,85 +1112,70 @@ fun EditorTopBar(
             .background(MaterialTheme.colorScheme.surface)
             .border(width = 1.dp, color = kc.Border)
             .statusBarsPadding()
-            .heightIn(min = 54.dp)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .heightIn(min = 52.dp)
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Back to Projects
-        IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-            Icon(Lucide.ChevronLeft, "Back to Projects", tint = kc.Muted, modifier = Modifier.size(22.dp))
+        IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
+            Icon(Lucide.ChevronLeft, "Back to Projects", tint = kc.Muted, modifier = Modifier.size(20.dp))
         }
 
         // Project Files Drawer
-        IconButton(onClick = onMenuClick, modifier = Modifier.size(36.dp)) {
-            Icon(Lucide.Menu, "Files Drawer", tint = kc.Muted, modifier = Modifier.size(21.dp))
+        IconButton(onClick = onMenuClick, modifier = Modifier.size(32.dp)) {
+            Icon(Lucide.Menu, "Files Drawer", tint = kc.Muted, modifier = Modifier.size(19.dp))
         }
 
         Spacer(Modifier.width(2.dp))
 
-        // Center Breadcrumb: PROJECT / active_file ▾
+        // Center Breadcrumb: Compact Stacked PROJECT / active_file ▾
         Box(modifier = Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .clickable { if (openFiles.isNotEmpty()) showOpenFilesDropdown = !showOpenFilesDropdown }
-                    .padding(horizontal = 6.dp, vertical = 6.dp)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
-                Text(
-                    text = buildAnnotatedString {
-                        withStyle(
-                            SpanStyle(
-                                color = kc.Secondary,
-                                fontSize = 12.sp,
-                                fontFamily = UrbanistFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.5.sp
-                            )
-                        ) {
-                            append(projectName.uppercase())
-                        }
-                        withStyle(
-                            SpanStyle(
-                                color = kc.Border,
-                                fontSize = 12.sp,
-                                fontFamily = UrbanistFontFamily,
-                                fontWeight = FontWeight.Normal
-                            )
-                        ) {
-                            append(" / ")
-                        }
-                        withStyle(
-                            SpanStyle(
-                                color = kc.OnBackground,
-                                fontSize = 13.sp,
-                                fontFamily = UrbanistFontFamily,
-                                fontWeight = FontWeight.Bold
-                            )
-                        ) {
-                            append(activeFileName)
-                        }
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
+                Column(modifier = Modifier.weight(1f, fill = false)) {
+                    if (projectName.isNotBlank()) {
+                        Text(
+                            text = projectName.uppercase(),
+                            color = kc.Secondary,
+                            fontSize = 9.sp,
+                            fontFamily = UrbanistFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Text(
+                        text = activeFileName,
+                        color = kc.OnBackground,
+                        fontSize = 13.sp,
+                        fontFamily = UrbanistFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (isUnsaved) {
-                    Spacer(Modifier.width(5.dp))
+                    Spacer(Modifier.width(4.dp))
                     Box(
                         modifier = Modifier
-                            .size(7.dp)
+                            .size(6.dp)
                             .clip(CircleShape)
                             .background(kc.Warning)
                     )
                 }
-                Spacer(Modifier.width(3.dp))
+                Spacer(Modifier.width(2.dp))
                 Icon(
                     Lucide.ChevronDown,
                     contentDescription = "Switch open file",
                     tint = if (openFiles.size > 1) kc.Primary else kc.Muted,
                     modifier = Modifier
-                        .size(16.dp)
+                        .size(14.dp)
                         .rotate(chevronRotation)
                 )
             }
@@ -1289,7 +1303,7 @@ fun EditorTopBar(
         if (isUnsaved) {
             Box(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(28.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(kc.Warning.copy(alpha = 0.16f))
                     .border(0.8.dp, kc.Warning.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
@@ -1300,10 +1314,10 @@ fun EditorTopBar(
                     Lucide.Save,
                     contentDescription = "Save file",
                     tint = kc.Warning,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(15.dp)
                 )
             }
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(4.dp))
         }
 
         // Context-aware Run / Build button
@@ -1332,43 +1346,66 @@ fun EditorTopBar(
             else          -> Color.White
         }
 
+        val view = LocalView.current
+        val context = LocalContext.current
         Button(
-            onClick        = onRun,
+            onClick        = {
+                KryptonHaptics.tick(context, view)
+                onRun()
+            },
             colors         = ButtonDefaults.buttonColors(
                 containerColor = runColor,
                 contentColor = runContentColor
             ),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
             shape          = RoundedCornerShape(50),
             elevation      = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 2.dp),
-            modifier       = Modifier.height(34.dp)
+            modifier       = Modifier.height(32.dp)
         ) {
-            Icon(runIcon, contentDescription = runLabel, tint = runContentColor, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(4.dp))
+            Icon(runIcon, contentDescription = runLabel, tint = runContentColor, modifier = Modifier.size(13.dp))
+            Spacer(Modifier.width(3.dp))
             Text(
                 runLabel,
                 color = runContentColor,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontFamily = UrbanistFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.3.sp
+                letterSpacing = 0.2.sp
             )
         }
 
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(2.dp))
+
+        // Quick Terminal Button
+        IconButton(
+            onClick = {
+                KryptonHaptics.tick(context, view)
+                onTerminal()
+            },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                Lucide.Terminal,
+                contentDescription = "Terminal",
+                tint = kc.Muted,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        Spacer(Modifier.width(1.dp))
 
         // Overflow More Menu (Terminal, Command Palette, etc.)
         Box {
             IconButton(
                 onClick = { showMoreMenu = true },
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     Lucide.EllipsisVertical,
                     "More actions",
                     tint = kc.Muted,
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(18.dp)
                         .rotate(moreRotation)
                 )
             }
@@ -1504,6 +1541,8 @@ fun NavItem(
 
     val displayIcon = icon
 
+    val context = LocalContext.current
+    val view = LocalView.current
     val activeBgColor = if (isGlow) kc.Secondary.copy(alpha = 0.12f) else kc.Primary.copy(alpha = 0.12f)
     val pillBackground by animateColorAsState(
         targetValue = if (isActive) activeBgColor else Color.Transparent,
@@ -1514,7 +1553,10 @@ fun NavItem(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
+            .clickable {
+                KryptonHaptics.click(context, view)
+                onClick()
+            }
             .padding(horizontal = 2.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center
     ) {

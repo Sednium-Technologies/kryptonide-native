@@ -16,71 +16,152 @@ sealed class OortyBlock {
     data class Status(val text: String) : OortyBlock()
     data class Edit(val file: String, val content: String) : OortyBlock()
     data class AifNote(val importance: Float, val summary: String, val tags: List<String> = emptyList()) : OortyBlock()
+    data class ToolCall(val name: String, val arguments: String) : OortyBlock()
 }
 
 object OortyTagParser {
 
-    private val CLOSED_TAG_REGEX = Regex(
-        """<(edit|patch|ans|plan|thinking|think|status|aif_note|aif)(?:\s+([^>]*))?>([\s\S]*?)<\/\1>""",
-        RegexOption.IGNORE_CASE
+    private data class TagSpec(
+        val type: String,
+        val openTags: List<String>,
+        val closeTags: List<String>
     )
 
-    private val ATTR_REGEX = Regex("""([a-zA-Z_]+)="([^"]*)"""")
+    private val TAG_SPECS = listOf(
+        TagSpec("think", listOf("think", "thinking"), listOf("think", "thinking")),
+        TagSpec("plan", listOf("plan"), listOf("plan")),
+        TagSpec("ans", listOf("ans"), listOf("ans")),
+        TagSpec("edit", listOf("edit", "patch"), listOf("edit", "patch")),
+        TagSpec("status", listOf("status"), listOf("status")),
+        TagSpec("aif", listOf("aif_note", "aif"), listOf("aif_note", "aif")),
+        TagSpec("tool_call", listOf("tool_call", "needle_action", "function"), listOf("tool_call", "needle_action", "function"))
+    )
+
+    private val ATTR_REGEX = Regex("""([a-zA-Z_][a-zA-Z0-9_-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""")
 
     fun cleanAnsText(text: String): String {
         return text.replace(Regex("""</?ans>""", RegexOption.IGNORE_CASE), "").trim()
     }
 
-    fun parse(raw: String): List<OortyBlock> {
-        val blocks = mutableListOf<OortyBlock>()
-        var lastEnd = 0
-
-        for (m in CLOSED_TAG_REGEX.findAll(raw)) {
-            if (m.range.first > lastEnd) {
-                val between = raw.substring(lastEnd, m.range.first)
-                val cleanedBetween = cleanAnsText(between)
-                if (cleanedBetween.isNotEmpty()) {
-                    blocks += OortyBlock.Ans(cleanedBetween)
-                }
-            }
-
-            val tagName = m.groupValues[1].lowercase()
-            val attrsRaw = m.groupValues[2]
-            val content = m.groupValues[3]
-
-            val attrs = ATTR_REGEX.findAll(attrsRaw).associate {
-                it.groupValues[1].lowercase() to it.groupValues[2]
-            }
-
-            when (tagName) {
-                "ans" -> {
-                    val cleaned = cleanAnsText(content)
-                    if (cleaned.isNotEmpty()) blocks += OortyBlock.Ans(cleaned)
-                }
-                "plan" -> blocks += OortyBlock.Plan(content.trim())
-                "status" -> blocks += OortyBlock.Status(content.trim())
-                "edit", "patch" -> {
-                    val file = attrs["file"] ?: "modified_file"
-                    blocks += OortyBlock.Edit(file, cleanEditContent(content))
-                }
-                "thinking", "think" -> blocks += OortyBlock.Thinking(content.trim())
-                "aif_note", "aif" -> {
-                    val importance = attrs["importance"]?.toFloatOrNull() ?: 0.5f
-                    val tags = attrs["tags"]?.split(",")?.map { it.trim() } ?: emptyList()
-                    blocks += OortyBlock.AifNote(importance, content.trim(), tags)
-                }
-                else -> {
-                    val cleaned = cleanAnsText(content)
-                    if (cleaned.isNotEmpty()) blocks += OortyBlock.Ans(cleaned)
-                }
-            }
-
-            lastEnd = m.range.last + 1
+    fun cleanEditContent(raw: String): String {
+        var c = raw.trim()
+        if (c.startsWith("```")) {
+            val firstLineEnd = c.indexOf('\n')
+            if (firstLineEnd != -1) c = c.substring(firstLineEnd + 1)
+            if (c.endsWith("```")) c = c.dropLast(3)
         }
+        c = c.replace(Regex("""</?(?:edit|patch)>?$""", RegexOption.IGNORE_CASE), "").trim()
+        return c
+    }
 
-        if (lastEnd < raw.length) {
-            val tail = raw.substring(lastEnd)
-            blocks.addAll(parseUnclosedTail(tail))
+    fun parseAttributes(header: String): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        for (m in ATTR_REGEX.findAll(header)) {
+            val key = m.groupValues[1].lowercase()
+            val value = when {
+                m.groupValues[2].isNotEmpty() -> m.groupValues[2]
+                m.groupValues[3].isNotEmpty() -> m.groupValues[3]
+                else -> m.groupValues[4]
+            }
+            result[key] = value
+        }
+        return result
+    }
+
+    private fun extractToolNameFromJson(raw: String): String? {
+        val trimmed = raw.trim()
+        val regex = Regex(""""(?:name|tool|function)"\s*:\s*"([^"]+)"""")
+        return regex.find(trimmed)?.groupValues?.get(1)
+    }
+
+    private fun extractToolArgsFromJson(raw: String): String {
+        val trimmed = raw.trim()
+        val regex = Regex(""""(?:arguments|parameters|args)"\s*:\s*(\{[\s\S]*\})""")
+        val match = regex.find(trimmed)
+        if (match != null) return match.groupValues[1].trim()
+        return trimmed
+    }
+
+    fun parse(raw: String): List<OortyBlock> {
+        if (raw.isBlank()) return emptyList()
+
+        val blocks = mutableListOf<OortyBlock>()
+        var cursor = 0
+        val len = raw.length
+
+        while (cursor < len) {
+            val nextOpen = raw.indexOf('<', cursor)
+            if (nextOpen == -1) {
+                val tail = raw.substring(cursor)
+                val cleaned = cleanAnsText(tail)
+                if (cleaned.isNotEmpty()) blocks += OortyBlock.Ans(cleaned)
+                break
+            }
+
+            // Check if '<' starts one of our recognized tags
+            var matchedSpec: TagSpec? = null
+            var matchedOpenTag = ""
+            var nameEnd = -1
+
+            if (nextOpen + 1 < len && raw[nextOpen + 1] != '/') {
+                var idx = nextOpen + 1
+                while (idx < len && (raw[idx].isLetterOrDigit() || raw[idx] == '_')) {
+                    idx++
+                }
+                if (idx > nextOpen + 1) {
+                    val candidate = raw.substring(nextOpen + 1, idx).lowercase()
+                    val spec = TAG_SPECS.firstOrNull { candidate in it.openTags }
+                    if (spec != null) {
+                        // Ensure followed by whitespace, '>', or end of string
+                        if (idx >= len || raw[idx].isWhitespace() || raw[idx] == '>') {
+                            matchedSpec = spec
+                            matchedOpenTag = candidate
+                            nameEnd = idx
+                        }
+                    }
+                }
+            }
+
+            if (matchedSpec == null) {
+                // Not one of our tags (e.g. HTML <p>, <div> or stray '<')
+                cursor = nextOpen + 1
+                continue
+            }
+
+            // Text between previous cursor and this tag is plain text
+            if (nextOpen > cursor) {
+                val preText = raw.substring(cursor, nextOpen)
+                val cleaned = cleanAnsText(preText)
+                if (cleaned.isNotEmpty()) blocks += OortyBlock.Ans(cleaned)
+            }
+
+            // Find end of open tag header '>'
+            val headerEnd = raw.indexOf('>', nameEnd)
+            if (headerEnd == -1) {
+                // Incomplete open tag at tail (e.g. "<edit file=\"index.html\"")
+                blocks.addAll(handleIncompleteOpenTag(matchedSpec))
+                cursor = len
+                break
+            }
+
+            val headerAttrs = raw.substring(nameEnd, headerEnd)
+            val attrs = parseAttributes(headerAttrs)
+            val bodyStart = headerEnd + 1
+
+            // Look for matching closing tag from this spec's allowed close tags
+            val closeMatch = findMatchingCloseTag(raw, bodyStart, matchedSpec.closeTags)
+            if (closeMatch != null) {
+                val content = raw.substring(bodyStart, closeMatch.first)
+                val block = createBlock(matchedSpec.type, matchedOpenTag, attrs, content)
+                if (block != null) blocks += block
+                cursor = closeMatch.second + 1
+            } else {
+                // Unclosed tag at tail (streaming mode)
+                val tailContent = raw.substring(bodyStart)
+                blocks.addAll(handleUnclosedTagTail(matchedSpec.type, matchedOpenTag, attrs, tailContent))
+                cursor = len
+                break
+            }
         }
 
         // Consolidate adjacent Ans blocks if any
@@ -100,89 +181,105 @@ object OortyTagParser {
         }
     }
 
-    private fun parseUnclosedTail(chunk: String): List<OortyBlock> {
-        val trimmed = chunk.trim()
-        if (trimmed.isEmpty()) return emptyList()
-
-        // Find earliest unclosed Krypton tag header
-        val tagHeaders = listOf("<edit", "<patch", "<thinking", "<think", "<plan", "<status", "<ans")
-        val earliest = tagHeaders.map { tag ->
-            val idx = chunk.indexOf(tag, ignoreCase = true)
-            tag to idx
-        }.filter { it.second >= 0 }.minByOrNull { it.second }
-
-        if (earliest != null && earliest.second > 0) {
-            val prefix = chunk.substring(0, earliest.second)
-            val remainder = chunk.substring(earliest.second)
-            val list = mutableListOf<OortyBlock>()
-            val cleanedPrefix = cleanAnsText(prefix)
-            if (cleanedPrefix.isNotEmpty()) list += OortyBlock.Ans(cleanedPrefix)
-            list.addAll(parseUnclosedTail(remainder))
-            return list
-        }
-
-        val lower = trimmed.lowercase()
-        return when {
-            lower.startsWith("<ans") -> {
-                val headerEnd = trimmed.indexOf('>')
-                if (headerEnd != -1) {
-                    val cleaned = cleanAnsText(trimmed.substring(headerEnd + 1))
-                    if (cleaned.isNotEmpty()) listOf(OortyBlock.Ans(cleaned)) else emptyList()
-                } else emptyList()
-            }
-            lower.startsWith("<plan") -> {
-                val headerEnd = trimmed.indexOf('>')
-                if (headerEnd != -1) listOf(OortyBlock.Plan(trimmed.substring(headerEnd + 1).trimStart()))
-                else listOf(OortyBlock.Plan(""))
-            }
-            lower.startsWith("<status") -> {
-                val headerEnd = trimmed.indexOf('>')
-                if (headerEnd != -1) listOf(OortyBlock.Status(trimmed.substring(headerEnd + 1).trimStart()))
-                else listOf(OortyBlock.Status(""))
-            }
-            lower.startsWith("<thinking") -> {
-                val headerEnd = trimmed.indexOf('>')
-                if (headerEnd != -1) listOf(OortyBlock.Thinking(trimmed.substring(headerEnd + 1).trimStart()))
-                else listOf(OortyBlock.Thinking(""))
-            }
-            lower.startsWith("<think") -> {
-                val headerEnd = trimmed.indexOf('>')
-                if (headerEnd != -1) listOf(OortyBlock.Thinking(trimmed.substring(headerEnd + 1).trimStart()))
-                else listOf(OortyBlock.Thinking(""))
-            }
-            lower.startsWith("<edit") || lower.startsWith("<patch") -> {
-                val headerEnd = trimmed.indexOf('>')
-                if (headerEnd != -1) {
-                    val header = trimmed.substring(0, headerEnd)
-                    val body = trimmed.substring(headerEnd + 1)
-                    val fileMatch = Regex("""file="([^"]*)"""", RegexOption.IGNORE_CASE).find(header)
-                    val file = fileMatch?.groupValues?.get(1) ?: "file"
-                    listOf(OortyBlock.Edit(file, cleanEditContent(body)))
-                } else {
-                    listOf(OortyBlock.Thinking("Generating file changes..."))
+    private fun findMatchingCloseTag(
+        raw: String,
+        startIndex: Int,
+        closeTags: List<String>
+    ): Pair<Int, Int>? {
+        var earliest: Pair<Int, Int>? = null
+        for (tag in closeTags) {
+            val pattern = Regex("""</\s*${Regex.escape(tag)}\s*>""", RegexOption.IGNORE_CASE)
+            val match = pattern.find(raw, startIndex)
+            if (match != null) {
+                if (earliest == null || match.range.first < earliest.first) {
+                    earliest = match.range.first to match.range.last
                 }
             }
+        }
+        return earliest
+    }
+
+    private fun createBlock(
+        type: String,
+        tagName: String,
+        attrs: Map<String, String>,
+        content: String
+    ): OortyBlock? {
+        return when (type) {
+            "think" -> {
+                val trimmed = content.trim()
+                if (trimmed.isNotEmpty()) OortyBlock.Thinking(trimmed) else OortyBlock.Thinking("")
+            }
+            "plan" -> {
+                val trimmed = content.trim()
+                if (trimmed.isNotEmpty()) OortyBlock.Plan(trimmed) else OortyBlock.Plan("")
+            }
+            "status" -> {
+                val trimmed = content.trim()
+                if (trimmed.isNotEmpty()) OortyBlock.Status(trimmed) else OortyBlock.Status("")
+            }
+            "ans" -> {
+                val cleaned = cleanAnsText(content)
+                if (cleaned.isNotEmpty()) OortyBlock.Ans(cleaned) else null
+            }
+            "edit" -> {
+                val file = attrs["file"] ?: attrs["path"] ?: attrs["name"] ?: "modified_file"
+                OortyBlock.Edit(file, cleanEditContent(content))
+            }
+            "aif" -> {
+                val importance = attrs["importance"]?.toFloatOrNull() ?: 0.5f
+                val tags = attrs["tags"]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+                OortyBlock.AifNote(importance, content.trim(), tags)
+            }
+            "tool_call" -> {
+                val name = attrs["name"] ?: extractToolNameFromJson(content) ?: tagName
+                val args = extractToolArgsFromJson(content)
+                OortyBlock.ToolCall(name, args)
+            }
             else -> {
-                val cleaned = cleanAnsText(trimmed)
+                val cleaned = cleanAnsText(content)
+                if (cleaned.isNotEmpty()) OortyBlock.Ans(cleaned) else null
+            }
+        }
+    }
+
+    private fun handleUnclosedTagTail(
+        type: String,
+        tagName: String,
+        attrs: Map<String, String>,
+        content: String
+    ): List<OortyBlock> {
+        return when (type) {
+            "think" -> listOf(OortyBlock.Thinking(content.trimStart()))
+            "plan" -> listOf(OortyBlock.Plan(content.trimStart()))
+            "status" -> listOf(OortyBlock.Status(content.trimStart()))
+            "ans" -> {
+                val cleaned = cleanAnsText(content)
+                if (cleaned.isNotEmpty()) listOf(OortyBlock.Ans(cleaned)) else emptyList()
+            }
+            "edit" -> {
+                val file = attrs["file"] ?: attrs["path"] ?: attrs["name"] ?: "file"
+                listOf(OortyBlock.Edit(file, cleanEditContent(content)))
+            }
+            "tool_call" -> {
+                val name = attrs["name"] ?: extractToolNameFromJson(content) ?: "tool"
+                listOf(OortyBlock.ToolCall(name, extractToolArgsFromJson(content)))
+            }
+            else -> {
+                val cleaned = cleanAnsText(content)
                 if (cleaned.isNotEmpty()) listOf(OortyBlock.Ans(cleaned)) else emptyList()
             }
         }
     }
 
-    fun cleanEditContent(raw: String): String {
-        var c = raw.trim()
-        if (c.startsWith("```")) {
-            val firstLineEnd = c.indexOf('\n')
-            if (firstLineEnd != -1) c = c.substring(firstLineEnd + 1)
-            if (c.endsWith("```")) c = c.dropLast(3)
+    private fun handleIncompleteOpenTag(spec: TagSpec): List<OortyBlock> {
+        return when (spec.type) {
+            "edit" -> listOf(OortyBlock.Thinking("Generating file changes..."))
+            "think" -> listOf(OortyBlock.Thinking(""))
+            "plan" -> listOf(OortyBlock.Plan(""))
+            "status" -> listOf(OortyBlock.Status(""))
+            else -> emptyList()
         }
-        if (c.endsWith("</edit>", ignoreCase = true)) {
-            c = c.substring(0, c.length - 7)
-        }
-        if (c.endsWith("</patch>", ignoreCase = true)) {
-            c = c.substring(0, c.length - 8)
-        }
-        return c.trim()
     }
 }
 

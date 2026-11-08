@@ -149,22 +149,65 @@ fun GitHubIssuesView(
             }
         } else if (filteredIssues.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
                     Icon(Lucide.CircleDot, null, tint = colors.Muted, modifier = Modifier.size(36.dp))
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        if (searchQuery.isNotBlank()) "No issues match \"$searchQuery\"" else "No issues found in repository",
-                        color = colors.Muted,
-                        fontSize = 13.sp
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = { refreshIssues() },
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Lucide.RefreshCw, null, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Refresh", fontSize = 12.sp)
+                    Spacer(Modifier.height(10.dp))
+                    if (searchQuery.isNotBlank()) {
+                        Text(
+                            "No issues match \"$searchQuery\"",
+                            color = colors.Muted,
+                            fontSize = 13.sp
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = { refreshIssues() },
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Lucide.RefreshCw, null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Refresh", fontSize = 12.sp)
+                        }
+                    } else {
+                        Text(
+                            text = "No open issues yet! 🎉",
+                            color = colors.OnSurface,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Found a bug or have a feature request for KryptonIDE v4.0? Tap '+ Raise Issue' above to submit one directly.",
+                            color = colors.Muted,
+                            fontSize = 12.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 20.dp)
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        OutlinedButton(
+                            onClick = { refreshIssues() },
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Lucide.RefreshCw, null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Refresh", fontSize = 12.sp)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = { showRaiseSheet = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colors.Primary,
+                                contentColor = colors.OnPrimary
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Lucide.Plus, null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("+ Raise First Issue", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             }

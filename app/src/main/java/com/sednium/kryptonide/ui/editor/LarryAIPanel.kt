@@ -46,6 +46,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import com.sednium.kryptonide.utils.KryptonHaptics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -85,6 +87,7 @@ fun LarryAIPanel(
 
     val colors = LocalKryptonColors.current
     val context = LocalContext.current
+    val view = LocalView.current
     val scope = rememberCoroutineScope()
     val pocketManager = remember { PocketServerManager.getInstance(context) }
     val inputText by aiVm.draftPromptText.collectAsStateWithLifecycle()
@@ -93,6 +96,7 @@ fun LarryAIPanel(
     var showModelSwitcher by remember { mutableStateOf(false) }
     var showAddModelDialog by remember { mutableStateOf(false) }
     var showHfImportDialog by remember { mutableStateOf(false) }
+    var showOnboardingSetup by remember { mutableStateOf(false) }
     var editingModel by remember { mutableStateOf<SavedModel?>(null) }
     var renamingSession by remember { mutableStateOf<ChatSession?>(null) }
     var sessionSearchQuery by remember { mutableStateOf("") }
@@ -128,12 +132,24 @@ fun LarryAIPanel(
         aiVm.hasValidApiKey()
     }
 
-    val activeModelName = remember(aiState.activeModelId, aiState.savedModels, aiState.provider, aiState.model, hasValidKey) {
+    val activeModelDisplayName = remember(aiState.activeModelId, aiState.savedModels, aiState.provider, aiState.model) {
+        val saved = aiState.savedModels.firstOrNull { it.id == aiState.activeModelId }
+        val isPocket = (saved?.provider ?: aiState.provider) == "pocket"
+        if (isPocket) {
+            val rawModel = saved?.model ?: aiState.model
+            val modelSpec = com.sednium.kryptonide.agent.pocket.PocketModels.findCatalogSpec(rawModel)
+            modelSpec?.name ?: if (rawModel.contains("minicpm")) "MiniCPM 1B" else rawModel
+        } else {
+            saved?.name ?: aiState.model
+        }
+    }
+
+    val activeModelName = remember(aiState.activeModelId, aiState.savedModels, aiState.provider, aiState.model, hasValidKey, activeModelDisplayName) {
         val saved = aiState.savedModels.firstOrNull { it.id == aiState.activeModelId }
         val providerDef = LARRY_PROVIDERS.firstOrNull { it.id == (saved?.provider ?: aiState.provider) }
         val isPocket = (saved?.provider ?: aiState.provider) == "pocket"
         val baseLabel = if (isPocket) {
-            "⚡ Pocket Server · ${saved?.model ?: aiState.model}"
+            "Pocket Server · $activeModelDisplayName"
         } else {
             saved?.name ?: "${providerDef?.name ?: aiState.provider} · ${aiState.model}"
         }
@@ -291,12 +307,13 @@ fun LarryAIPanel(
                 }
                 Column(
                     modifier = Modifier
+                        .weight(1f, fill = false)
                         .clip(RoundedCornerShape(6.dp))
                         .clickable { showModelSwitcher = true }
                         .padding(vertical = 2.dp, horizontal = 2.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Kryptonide AI", color = colors.OnBackground, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("Oorty Lite", color = colors.OnBackground, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         if (aiState.isLoading) {
                             Box(
                                 modifier = Modifier
@@ -310,28 +327,32 @@ fun LarryAIPanel(
                     }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        if (!hasValidKey) {
+                        val isPocket = aiState.provider == "pocket"
+                        val ramStatus = aiState.modelRamStatus
+                        val statusColor = when {
+                            isPocket && ramStatus == com.sednium.kryptonide.ui.ai.ModelRamStatus.READY -> colors.Primary
+                            isPocket && ramStatus == com.sednium.kryptonide.ui.ai.ModelRamStatus.LOADING -> colors.Warning
+                            isPocket -> colors.Secondary
+                            !hasValidKey -> colors.Error
+                            else -> colors.Muted
+                        }
+                        val (statusIcon, displayText) = when {
+                            isPocket && ramStatus == com.sednium.kryptonide.ui.ai.ModelRamStatus.LOADING -> Lucide.Zap to "Loading into RAM..."
+                            isPocket && ramStatus == com.sednium.kryptonide.ui.ai.ModelRamStatus.READY -> Lucide.CircleCheck to "Ready in RAM • $activeModelDisplayName"
+                            isPocket && ramStatus == com.sednium.kryptonide.ui.ai.ModelRamStatus.ERROR -> Lucide.TriangleAlert to "RAM Load Failed"
+                            isPocket -> Lucide.Cpu to "On-Device • $activeModelDisplayName"
+                            !hasValidKey -> Lucide.TriangleAlert to activeModelName
+                            else -> null to activeModelName
+                        }
+                        if (statusIcon != null) {
                             Icon(
-                                Lucide.TriangleAlert,
+                                statusIcon,
                                 contentDescription = null,
-                                tint = colors.Error,
+                                tint = statusColor,
                                 modifier = Modifier.size(12.dp)
                             )
-                        }
-                        val isPocket = aiState.provider == "pocket"
-                        val displayText = when {
-                            isPocket && aiState.modelRamStatus == com.sednium.kryptonide.ui.ai.ModelRamStatus.LOADING -> "⚡ Loading into RAM..."
-                            isPocket && aiState.modelRamStatus == com.sednium.kryptonide.ui.ai.ModelRamStatus.READY -> "● Ready in RAM • $activeModelName"
-                            isPocket && aiState.modelRamStatus == com.sednium.kryptonide.ui.ai.ModelRamStatus.ERROR -> "⚠️ RAM Load Failed"
-                            else -> activeModelName
-                        }
-                        val statusColor = when {
-                            !hasValidKey -> colors.Error
-                            isPocket && aiState.modelRamStatus == com.sednium.kryptonide.ui.ai.ModelRamStatus.READY -> colors.Primary
-                            isPocket && aiState.modelRamStatus == com.sednium.kryptonide.ui.ai.ModelRamStatus.LOADING -> colors.Warning
-                            else -> colors.Muted
                         }
                         Text(
                             displayText,
@@ -457,15 +478,16 @@ fun LarryAIPanel(
                 }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    val isPocket = aiState.provider == "pocket"
                     Box(
                         modifier = Modifier
                             .size(7.dp)
                             .clip(CircleShape)
-                            .background(if (hasValidKey) colors.Primary else colors.Muted)
+                            .background(if (isPocket || hasValidKey) colors.Primary else colors.Muted)
                     )
                     Text(
-                        if (hasValidKey) "Ready" else "No API Key",
-                        color = colors.Muted,
+                        if (isPocket) "On-Device" else if (hasValidKey) "Ready" else "No API Key",
+                        color = if (isPocket || hasValidKey) colors.OnSurface else colors.Muted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -879,12 +901,22 @@ fun LarryAIPanel(
                 // otherwise show a compact context banner if no key is configured.
                 if (visibleMessages.isEmpty() && aiState.streamingText.isEmpty()) {
                     item(key = "welcome_empty_state") {
+                        val isPocket = aiState.provider == "pocket"
+                        val isPocketInstalled = remember(context) {
+                            com.sednium.kryptonide.agent.pocket.ModelDownloadManager.isModelInstalled(
+                                context,
+                                com.sednium.kryptonide.agent.pocket.PocketModels.getDefaultModel()
+                            )
+                        }
                         EmptyStateHero(
                             activeFileName = if (hasValidFile) activeFileName else null,
                             aiMode = aiMode,
                             hasValidKey = hasValidKey,
+                            isPocket = isPocket,
+                            isPocketBundleInstalled = isPocketInstalled,
                             hasSavedModels = aiState.savedModels.isNotEmpty(),
                             colors = colors,
+                            onDownloadDefaultAi = { showOnboardingSetup = true },
                             onAddModel = { showAddModelDialog = true },
                             onSwitchModel = { showModelSwitcher = true },
                             onQuickPrompt = { promptText, preferredMode ->
@@ -895,7 +927,7 @@ fun LarryAIPanel(
                             }
                         )
                     }
-                } else if (!hasValidKey) {
+                } else if (!hasValidKey && aiState.provider != "pocket") {
                     item(key = "compact_key_banner") {
                         Row(
                             modifier = Modifier
@@ -939,8 +971,14 @@ fun LarryAIPanel(
                         colors = colors,
                         onApplyEdit = onApplyEdit,
                         onInsertAtCursor = onInsertAtCursor,
-                        onRetry = { aiVm.retryFromError(msg.id, contextPrompt) },
-                        onRegenerate = { aiVm.regenerateMessage(msg.id, contextPrompt) },
+                        onRetry = {
+                            KryptonHaptics.click(context, view)
+                            aiVm.retryFromError(msg.id, contextPrompt)
+                        },
+                        onRegenerate = {
+                            KryptonHaptics.click(context, view)
+                            aiVm.regenerateMessage(msg.id, contextPrompt)
+                        },
                         onDelete = { aiVm.deleteSingleMessage(msg.id) },
                         onEditPrompt = { oldText ->
                             val attachmentPrefix = "[📎 "
@@ -1205,6 +1243,7 @@ fun LarryAIPanel(
                 val canSend = inputText.isNotBlank() && !aiState.isLoading
                 val handleSend: () -> Unit = {
                     if (canSend) {
+                        KryptonHaptics.click(context, view)
                         userScrolledAway = false
                         val currentAttachments = attachedFiles.toList()
                         val prompt = buildPrompt()
@@ -1243,7 +1282,7 @@ fun LarryAIPanel(
                             when (aiMode) {
                                 "write" -> "Describe code to write or edit in ${if (hasValidFile) activeFileName else "project"}…"
                                 "agent" -> "Describe a multi-step task (type @ to tag files)…"
-                                else -> "Ask Kryptonide AI or type @ to tag files…"
+                                else -> "Ask Oorty Lite or type @ to tag files…"
                             },
                             color = colors.Muted,
                             fontSize = 13.sp,
@@ -1296,7 +1335,10 @@ fun LarryAIPanel(
                             .background(colors.Error)
                             .clickable(
                                 role = Role.Button,
-                                onClick = { aiVm.abortChat() }
+                                onClick = {
+                                    KryptonHaptics.click(context, view)
+                                    aiVm.abortChat()
+                                }
                             ),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1475,7 +1517,10 @@ fun LarryAIPanel(
                     val isPocketRunning = pocketTelemetry.status == PocketServerStatus.RUNNING
                     val activeSaved = aiState.savedModels.firstOrNull { it.id == aiState.activeModelId }
                     val isPocketActive = (activeSaved?.provider ?: aiState.provider) == "pocket"
-                    val localModelName = pocketTelemetry.activeModel?.name ?: "Needle 3 (needle-3-q4.cact)"
+                    val localModelName = pocketTelemetry.activeModel?.matchedCatalogSpec?.name
+                        ?: pocketTelemetry.activeModel?.name
+                        ?: com.sednium.kryptonide.agent.pocket.PocketModels.findCatalogSpec(aiState.model)?.name
+                        ?: com.sednium.kryptonide.agent.pocket.PocketModels.getDefaultModel().name
 
                     // 1. On-Device AI Option
                     Text(
@@ -1625,6 +1670,7 @@ fun LarryAIPanel(
                                         RoundedCornerShape(10.dp)
                                     )
                                     .clickable {
+                                        KryptonHaptics.click(context, view)
                                         aiVm.setActiveSavedModel(saved.id)
                                         if (saved.provider == "pocket") {
                                             aiVm.preloadPocketModel(saved.model)
@@ -1740,6 +1786,13 @@ fun LarryAIPanel(
         )
     }
 
+    if (showOnboardingSetup) {
+        com.sednium.kryptonide.ui.onboarding.AiOnboardingDialog(
+            colors = colors,
+            onDismiss = { showOnboardingSetup = false }
+        )
+    }
+
     if (showAddModelDialog) {
         AddModelDialog(
             onDismiss = { showAddModelDialog = false },
@@ -1844,8 +1897,11 @@ private fun EmptyStateHero(
     activeFileName: String?,
     aiMode: String,
     hasValidKey: Boolean,
+    isPocket: Boolean,
+    isPocketBundleInstalled: Boolean,
     hasSavedModels: Boolean,
     colors: KryptonColorPalette,
+    onDownloadDefaultAi: () -> Unit,
     onAddModel: () -> Unit,
     onSwitchModel: () -> Unit,
     onQuickPrompt: (prompt: String, mode: String?) -> Unit
@@ -1879,7 +1935,7 @@ private fun EmptyStateHero(
                 }
                 Column {
                     Text(
-                        "Kryptonide AI Agent Harness",
+                        "Oorty Lite Agent Harness",
                         color = colors.OnBackground,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -1908,8 +1964,8 @@ private fun EmptyStateHero(
             )
         }
 
-        // Setup Card if no API key
-        if (!hasValidKey) {
+        // Setup Card if no API key or if on-device model bundle not yet installed
+        if ((!hasValidKey && !isPocket) || (isPocket && !isPocketBundleInstalled)) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1920,44 +1976,68 @@ private fun EmptyStateHero(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Lucide.Key, null, tint = colors.Primary, modifier = Modifier.size(16.dp))
+                    Icon(if (isPocket) Lucide.Zap else Lucide.Key, null, tint = colors.Primary, modifier = Modifier.size(16.dp))
                     Text(
-                        "Connect an AI Model",
+                        if (isPocket) "Default On-Device Engine" else "Connect an AI Model",
                         color = colors.OnBackground,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
                 Text(
-                    "Add your API key for Google Gemini, OpenAI, Anthropic Claude, DeepSeek, Groq, OpenRouter, or connect local Ollama to start coding with AI.",
+                    if (isPocket) {
+                        "Run MiniCPM 1B (Base Brain) 100% offline in RAM with deep <think> reasoning, code editing, and full tool execution. Download once to use permanently without any API keys."
+                    } else {
+                        "Add your API key for Google Gemini, OpenAI, Anthropic Claude, DeepSeek, Groq, OpenRouter, or connect local Ollama to start coding with AI."
+                    },
                     color = colors.Muted,
                     fontSize = 12.sp,
                     lineHeight = 16.sp
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isPocket && !isPocketBundleInstalled) {
+                        Button(
+                            onClick = onDownloadDefaultAi,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colors.Primary,
+                                contentColor = colors.OnPrimary
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Icon(Lucide.Zap, null, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("⚡ Download MiniCPM 1B (~650MB)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                     Button(
                         onClick = onAddModel,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = colors.Primary,
-                            contentColor = colors.OnPrimary
+                            containerColor = if (isPocket && !isPocketBundleInstalled) colors.Surface else colors.Primary,
+                            contentColor = if (isPocket && !isPocketBundleInstalled) colors.OnSurface else colors.OnPrimary
                         ),
                         shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.height(32.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.height(34.dp)
                     ) {
-                        Icon(Lucide.Plus, null, modifier = Modifier.size(14.dp))
+                        Icon(Lucide.Plus, null, modifier = Modifier.size(13.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Add Model & Key", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("+ Add Cloud API Key", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                     if (hasSavedModels) {
                         OutlinedButton(
                             onClick = onSwitchModel,
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            modifier = Modifier.height(32.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.height(34.dp),
                             border = BorderStroke(0.5.dp, colors.Border)
                         ) {
-                            Text("Switch Model", color = colors.OnBackground, fontSize = 12.sp)
+                            Text("Switch", color = colors.OnBackground, fontSize = 11.sp)
                         }
                     }
                 }
@@ -2464,8 +2544,10 @@ fun LarryMessageView(
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
                     )
+                    val view = LocalView.current
                     Button(
                         onClick = {
+                            KryptonHaptics.success(context, view)
                             editBlocks.forEach { onApplyEdit(it.file, it.content) }
                             Toast.makeText(context, "Applied all ${editBlocks.size} files", Toast.LENGTH_SHORT).show()
                         },
@@ -2704,6 +2786,7 @@ private fun CodeFenceCard(
     isStreaming: Boolean = false
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     var applied by remember(code) { mutableStateOf(false) }
     val targetFile = remember(code, lang, activeFileName) {
         detectFileNameInCode(code, lang, activeFileName)
@@ -2781,6 +2864,7 @@ private fun CodeFenceCard(
                     ) {
                         OutlinedButton(
                             onClick = {
+                                KryptonHaptics.click(context, view)
                                 copyToClipboard(context, code)
                                 Toast.makeText(context, "Copied code", Toast.LENGTH_SHORT).show()
                             },
@@ -2797,6 +2881,7 @@ private fun CodeFenceCard(
 
                         OutlinedButton(
                             onClick = {
+                                KryptonHaptics.click(context, view)
                                 onInsertAtCursor(code)
                                 Toast.makeText(context, "Inserted at cursor in $targetFile", Toast.LENGTH_SHORT).show()
                             },
@@ -2811,6 +2896,7 @@ private fun CodeFenceCard(
 
                         Button(
                             onClick = {
+                                KryptonHaptics.success(context, view)
                                 onApplyEdit(targetFile, code)
                                 applied = true
                                 Toast.makeText(context, if (isPatch) "Applied surgical patch to $targetFile" else "Applied to $targetFile", Toast.LENGTH_SHORT).show()
@@ -2824,11 +2910,25 @@ private fun CodeFenceCard(
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.height(32.dp)
                         ) {
-                            Text(
-                                if (applied) "Applied ✓" else "Apply",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            if (applied) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Lucide.Check, contentDescription = null, modifier = Modifier.size(12.dp))
+                                    Text(
+                                        "Applied",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    "Apply",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                 }
@@ -2972,6 +3072,7 @@ private fun EditBlockView(
     isStreaming: Boolean = false
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     var applied by rememberSaveable(file, content) { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
     val totalLines = remember(content) { content.lines().size }
@@ -3070,6 +3171,7 @@ private fun EditBlockView(
                     ) {
                         OutlinedButton(
                             onClick = {
+                                KryptonHaptics.click(context, view)
                                 copyToClipboard(context, content)
                                 Toast.makeText(context, "Copied file content", Toast.LENGTH_SHORT).show()
                             },
@@ -3086,6 +3188,7 @@ private fun EditBlockView(
 
                         OutlinedButton(
                             onClick = {
+                                KryptonHaptics.click(context, view)
                                 onInsertAtCursor(content)
                                 Toast.makeText(context, "Inserted at cursor", Toast.LENGTH_SHORT).show()
                             },
@@ -3100,6 +3203,7 @@ private fun EditBlockView(
 
                         Button(
                             onClick = {
+                                KryptonHaptics.success(context, view)
                                 onApplyEdit(file, content)
                                 applied = true
                                 Toast.makeText(context, if (isPatch) "Applied surgical patch to $file" else "Applied changes to $file", Toast.LENGTH_SHORT).show()
@@ -3113,11 +3217,25 @@ private fun EditBlockView(
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.height(32.dp)
                         ) {
-                            Text(
-                                if (applied) "Applied ✓" else "Apply",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            if (applied) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Lucide.Check, contentDescription = null, modifier = Modifier.size(12.dp))
+                                    Text(
+                                        "Applied",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    "Apply",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                 }
@@ -3278,6 +3396,6 @@ fun SuggestionChip(
 
 private fun copyToClipboard(context: Context, text: String, toastMessage: String = "Copied to clipboard") {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-    clipboard?.setPrimaryClip(ClipData.newPlainText("Kryptonide AI", text))
+    clipboard?.setPrimaryClip(ClipData.newPlainText("Oorty Lite", text))
     Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
 }
