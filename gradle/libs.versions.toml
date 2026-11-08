@@ -35,7 +35,9 @@ cameraLifecycle = "1.5.0"
 # ktlint-rule-engine pulls in Kotlin-compiler-adjacent parsing internals,
 # not just plain stdlib.
 ktlint = "1.8.0"
-lucide-icons = "2.2.1"
+# 2.2.1 on Maven Central is a broken AAR (empty classes.jar); 1.1.0 is the
+# newest version that actually ships the Lucide composable API.
+lucide-icons = "1.1.0"
 cameraView = "1.5.0"
 cameraCore = "1.5.0"
 loggingInterceptor = "5.5.1"
@@ -53,7 +55,10 @@ googleApiServicesDrive = "v3-rev20261023-2.9.2"
 googleHttpClientGson = "2.2.0"
 securityCrypto = "1.1.0"
 webkit = "1.18.0"
-playServicesAuth = "22.0.0"
+# 22.0.0 removes the legacy GoogleSignIn API used by ProjectsDashboard and
+# SettingsScreen. 21.6.0 is the last release on that API; migrating to
+# Credential Manager + AuthorizationClient is tracked as a follow-up.
+playServicesAuth = "21.6.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
