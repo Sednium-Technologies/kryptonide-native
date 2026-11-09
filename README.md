@@ -1,7 +1,8 @@
 # Kryptonide
 
 <p align="center">
-  <strong>A native Android IDE with an on-device AI workflow.</strong>
+  <strong>A native Android IDE with an on-device AI workflow.</strong><br>
+  <a href="https://kryptonide.sednium.com"><strong>🌐 kryptonide.sednium.com</strong></a>
 </p>
 
 <p align="center">
@@ -19,6 +20,25 @@ Kryptonide turns an Android device into a portable development workspace. Built 
 > [!NOTE]
 > **Project Status:** Actively developed. Some features depend on device architecture, installed command-line tools, storage permissions, network access, or third-party API providers.  
 > More patch updates will come. If you find issues, submit them via the [GitHub Issues](https://github.com/Sednium-Technologies/kryptonide-native/issues) tab or in-app, and we will address them.
+
+---
+
+## 📱 Visual Tour & Interface
+
+| **Project Dashboard** | **Native Code Editor** | **File Explorer** |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/01-project-dashboard.jpg" width="260" alt="Project Dashboard" /> | <img src="docs/screenshots/02-sora-code-editor.jpg" width="260" alt="Native Code Editor" /> | <img src="docs/screenshots/03-file-explorer.jpg" width="260" alt="File Explorer" /> |
+| *Unified workspace management & templates* | *Hardware-accelerated Sora editing engine* | *Full project tree navigation & search* |
+
+| **GitHub Integration** | **On-Device AI Assistant** | **Plugin Marketplace** |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/04-github-integration.jpg" width="260" alt="GitHub Integration" /> | <img src="docs/screenshots/05-ai-assistant.jpg" width="260" alt="On-Device AI Assistant" /> | <img src="docs/screenshots/06-extensions-manager.jpg" width="260" alt="Extensions Manager" /> |
+| *Authentication, cloud builds & Actions* | *Context-aware code reasoning & chat* | *Themes, linters & formatters* |
+
+| **Editor Preferences** | **Pocket Server** | **Built-in Terminal** |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/07-editor-settings.jpg" width="260" alt="Editor Settings" /> | <img src="docs/screenshots/08-pocket-server.jpg" width="260" alt="Pocket Server" /> | <img src="docs/screenshots/09-built-in-terminal.jpg" width="260" alt="Built-in Terminal" /> |
+| *Typography, keymaps & syntax themes* | *Local GGUF models & CPU prime pinning* | *Standalone POSIX shell environment* |
 
 ---
 
@@ -245,6 +265,7 @@ Output: `app/build/outputs/apk/release/app-release.apk`
 │       │   └── AndroidManifest.xml
 │       └── test/                  # Unit and Robolectric tests
 ├── docs/                          # Architecture specifications and documentation
+│   └── screenshots/               # Application interface screenshots
 ├── gradle/                        # Gradle wrapper and version catalog
 ├── .env.example                   # Environment configuration template
 ├── build.gradle.kts               # Root build script
@@ -273,7 +294,8 @@ When reporting an issue, please include your Android version, device model and a
 
 **Loid aka Ankush Das**  
 Creator and developer of Kryptonide.  
-- 🌐 Website: [loid.sednium.com](https://loid.sednium.com)  
+- 🌐 Project Website: [kryptonide.sednium.com](https://kryptonide.sednium.com)  
+- 👤 Personal Website: [loid.sednium.com](https://loid.sednium.com)  
 - 🏢 Developed under **Sednium Technologies**.
 
 ---
