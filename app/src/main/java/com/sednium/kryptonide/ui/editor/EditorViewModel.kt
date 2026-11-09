@@ -21,9 +21,16 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import com.sednium.kryptonide.data.model.Project
+import com.sednium.kryptonide.data.model.ProjectTemplate
+import com.sednium.kryptonide.utils.ProjectDirectoryResolver
+import com.sednium.kryptonide.utils.StorageUtils
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 enum class SidebarView { EXPLORER, SEARCH, GIT, AI, EXTENSIONS, SETTINGS }
 enum class AppTheme { DARK, LIGHT, HC_BLACK }
@@ -55,8 +62,20 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<EditorUiState> = _state.asStateFlow()
 
     private var autoSaveJob: Job? = null
+    private var watcherCollectorJob: Job? = null
+    private var currentWatcherSessionId: String? = null
     private var currentProjectId: String? = null
     private var currentProjectName: String? = null
+
+    // Document revision and mutex map for safe concurrent saves
+    private val documentRevisions = ConcurrentHashMap<String, Long>()
+    private val lastSavedDiskRevisions = ConcurrentHashMap<String, Long>()
+    private val documentSaveMutexes = ConcurrentHashMap<String, Mutex>()
+
+    fun getFileRevision(fileId: String): Long = documentRevisions[fileId] ?: 0L
+    fun getLastSavedDiskRevision(fileId: String): Long = lastSavedDiskRevisions[fileId] ?: 0L
+    fun getWatcherCollectorJob(): Job? = watcherCollectorJob
+    fun getCurrentWatcherSessionId(): String? = currentWatcherSessionId
 
     // Set by EditorScreen when the editor is ready so we can reload it
     // if the currently-open file is modified externally.
@@ -64,17 +83,16 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun getProjectDirectory(): java.io.File {
         val name = currentProjectName
+        val id = currentProjectId
         return if (!name.isNullOrBlank()) {
-            val dir = java.io.File(com.sednium.kryptonide.utils.StorageUtils.getProjectsDir(), name)
-            if (dir.exists()) dir else {
-                val rootDir = java.io.File(com.sednium.kryptonide.utils.StorageUtils.getKryptonideRoot(), name)
-                if (rootDir.exists()) rootDir else {
-                    val legacy = java.io.File(com.sednium.kryptonide.utils.StorageUtils.getExternalStorageDir(), "KryptonIDE/$name")
-                    if (legacy.exists()) legacy else dir
-                }
-            }
+            val proj = Project(
+                id = id ?: "",
+                name = name,
+                template = ProjectTemplate.BLANK
+            )
+            ProjectDirectoryResolver.resolve(proj).directoryOrPreferred()
         } else {
-            com.sednium.kryptonide.utils.StorageUtils.getProjectsDir()
+            StorageUtils.getProjectsDir()
         }
     }
 
@@ -83,7 +101,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Project loading ──────────────────────────────────────
 
-    fun loadProject(projectId: String) {
+    fun loadProject(projectId: String, enableAutoSave: Boolean = true) {
         currentProjectId = projectId
         viewModelScope.launch {
             val project = repo.getProject(projectId)
@@ -103,7 +121,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 startFileWatcher(projectId, project.name)
             }
         }
-        startAutoSave()
+        if (enableAutoSave) {
+            startAutoSave()
+        }
+    }
+
+    fun stopAutoSave() {
+        autoSaveJob?.cancel()
+        autoSaveJob = null
     }
 
     fun reloadCurrentProject() {
@@ -119,12 +144,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun unloadProject() {
         autoSaveJob?.cancel()
-        
+        autoSaveJob = null
+
         val projectName = currentProjectName
-        if (projectName != null) stopFileWatcher(projectName)
-        
+        if (projectName != null) {
+            stopFileWatcher(projectName)
+        } else {
+            watcherCollectorJob?.cancel()
+            watcherCollectorJob = null
+            currentWatcherSessionId = null
+        }
+
         currentProjectId = null
         currentProjectName = null
+        documentRevisions.clear()
+        lastSavedDiskRevisions.clear()
+        documentSaveMutexes.clear()
         _state.value = _state.value.copy(
             files = emptyMap(),
             openFileIds = emptyList(),
@@ -133,23 +168,39 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ── External Sync Logic ──────────────────────────────────
-    
+
     // ── Start watching the project folder on disk ─────────────────────────────
     // Called once when a project is loaded. Sets up:
     //   1. FileWatcherService watching the project directory
     //   2. Flow collection of DiskSyncEvents → triggers resync
 
     fun startFileWatcher(projectId: String, projectName: String) {
-        // Start watching
-        FileWatcherService.startWatching(projectName)
+        // Idempotency: cancel previous collector job so events are never duplicated
+        watcherCollectorJob?.cancel()
+        watcherCollectorJob = null
 
-        // Collect events
-        FileWatcherService.events
-            .onEach { event -> handleDiskEvent(event, projectId, projectName) }
+        val sessionId = UUID.randomUUID().toString()
+        currentWatcherSessionId = sessionId
+
+        val projDir = getProjectDirectory()
+        if (projDir.exists() && projDir.isDirectory) {
+            FileWatcherService.startWatching(projectName, projDir)
+        }
+
+        // Collect events in a tracked job with session isolation
+        watcherCollectorJob = FileWatcherService.events
+            .onEach { event ->
+                if (currentWatcherSessionId == sessionId && currentProjectId == projectId) {
+                    handleDiskEvent(event, projectId, projectName)
+                }
+            }
             .launchIn(viewModelScope)
     }
 
     fun stopFileWatcher(projectName: String) {
+        watcherCollectorJob?.cancel()
+        watcherCollectorJob = null
+        currentWatcherSessionId = null
         FileWatcherService.stopWatchingProject(projectName)
     }
 
@@ -167,13 +218,15 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             is DiskSyncEvent.FileCreated,
             is DiskSyncEvent.FileModified,
             is DiskSyncEvent.FileDeleted,
-            is DiskSyncEvent.FileMoved -> {
+            is DiskSyncEvent.FileMoved,
+            is DiskSyncEvent.RescanRequired -> {
                 // Only handle events for this project
                 val eventProject = when (event) {
                     is DiskSyncEvent.FileCreated   -> event.projectName
                     is DiskSyncEvent.FileModified  -> event.projectName
                     is DiskSyncEvent.FileDeleted   -> event.projectName
                     is DiskSyncEvent.FileMoved     -> event.projectName
+                    is DiskSyncEvent.RescanRequired -> event.projectName
                     else -> return
                 }
                 if (eventProject != projectName) return
@@ -185,8 +238,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     return
                 }
 
+                val sessionId = currentWatcherSessionId
                 viewModelScope.launch {
+                    if (currentWatcherSessionId != sessionId || currentProjectId != projectId) return@launch
                     val newFiles = repo.resyncProjectFromDisk(projectId)
+                    if (currentWatcherSessionId != sessionId || currentProjectId != projectId) return@launch
                     val activeId = _state.value.activeFileId
                     val host = soraHost
                     val liveEditorContent = if (host != null && activeId != null) {
@@ -194,6 +250,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     } else null
 
                     _state.update { state ->
+                        if (currentWatcherSessionId != sessionId || currentProjectId != projectId) return@update state
                         val updatedMap = newFiles.associateBy { f -> f.id }.toMutableMap()
                         // Preserve live unsaved buffer for the active file if it matches or is being edited
                         if (activeId != null && liveEditorContent != null) {
@@ -218,6 +275,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         host != null
                     ) {
                         withContext(Dispatchers.Main) {
+                            if (currentWatcherSessionId != sessionId || currentProjectId != projectId) return@withContext
                             val diskContent = activeFile.content ?: ""
                             if (host.getContent() != diskContent && _state.value.files[activeId]?.isUnsaved != true) {
                                 host.loadFile(
@@ -245,18 +303,66 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     // This is the "ctrl+s" equivalent — writes to both DB and disk.
 
     fun saveFileToDisk(fileId: String) {
+        val currentFile = _state.value.files[fileId] ?: return
+        // Binary and non-text files have null content; never save empty string over them!
+        if (currentFile.content == null) return
+        val contentToSave = currentFile.content
+        val targetRevision = documentRevisions[fileId] ?: 0L
+        saveSnapshotToDisk(fileId, contentToSave, targetRevision)
+    }
+
+    internal fun saveSnapshotToDisk(fileId: String, contentToSave: String, targetRevision: Long) {
+        val projectId = currentProjectId ?: return
         lastInternalSaveMs = System.currentTimeMillis()
+
         viewModelScope.launch {
-            val projectId = currentProjectId ?: return@launch
-            val file      = _state.value.files[fileId] ?: return@launch
-            lastInternalSaveMs = System.currentTimeMillis()
-            repo.markFileSaved(projectId, fileId, file.content ?: "")
-            lastInternalSaveMs = System.currentTimeMillis()
-            _state.update { s ->
-                val latest = s.files[fileId] ?: file
-                s.copy(files = s.files.toMutableMap().apply {
-                    this[fileId] = latest.copy(isUnsaved = false)
-                })
+            val mutex = documentSaveMutexes.computeIfAbsent(fileId) { Mutex() }
+            mutex.withLock {
+                try {
+                    if (currentProjectId != projectId) return@withLock
+                    val lastDiskRev = lastSavedDiskRevisions[fileId] ?: 0L
+                    if (targetRevision <= lastDiskRev) {
+                        // Obsolete revision: a newer revision has already been saved to disk!
+                        // Drop this write so an older snapshot can NEVER overwrite newer content on disk.
+                        _state.update { s ->
+                            if (currentProjectId != projectId) return@update s
+                            val node = s.files[fileId] ?: return@update s
+                            val currentRev = documentRevisions[fileId] ?: 0L
+                            // Mark clean only if current editor buffer matches what is on disk
+                            if (currentRev == lastDiskRev) {
+                                s.copy(files = s.files.toMutableMap().apply {
+                                    this[fileId] = node.copy(isUnsaved = false)
+                                })
+                            } else {
+                                s
+                            }
+                        }
+                        return@withLock
+                    }
+
+                    repo.markFileSaved(projectId, fileId, contentToSave)
+                    lastSavedDiskRevisions[fileId] = targetRevision
+                    lastInternalSaveMs = System.currentTimeMillis()
+
+                    _state.update { s ->
+                        if (currentProjectId != projectId) return@update s
+                        val node = s.files[fileId] ?: return@update s
+                        val currentRev = documentRevisions[fileId] ?: 0L
+                        val diskRev = lastSavedDiskRevisions[fileId] ?: 0L
+                        // Mark clean ONLY if no intermediate edits happened and disk matches live revision
+                        if (currentRev == targetRevision && diskRev == currentRev) {
+                            s.copy(files = s.files.toMutableMap().apply {
+                                this[fileId] = node.copy(isUnsaved = false)
+                            })
+                        } else {
+                            // Leave dirty; subsequent save will catch newer revision
+                            s
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    android.util.Log.e("EditorViewModel", "Failed to save file $fileId to disk", e)
+                }
             }
         }
     }
@@ -293,6 +399,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateContent(fileId: String, content: String) {
+        documentRevisions.compute(fileId) { _, rev -> (rev ?: 0L) + 1L }
         val files = _state.value.files.toMutableMap()
         files[fileId] = files[fileId]?.copy(content = content, isUnsaved = true) ?: return
         _state.value = _state.value.copy(files = files)
@@ -327,10 +434,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun renameFile(id: String, newName: String) {
+        val pid = currentProjectId ?: return
         val files = _state.value.files.toMutableMap()
         files[id] = files[id]?.copy(name = newName, language = languageFromFilename(newName)) ?: return
         _state.value = _state.value.copy(files = files)
-        viewModelScope.launch { files[id]?.let { repo.upsertFile(it) } }
+        viewModelScope.launch { repo.renameFile(pid, id, newName) }
     }
 
     /** True if `candidateId` is `ancestorId` itself or lives anywhere under it. Used to block
@@ -375,10 +483,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         files[nodeId] = node.copy(parentId = newParentId, name = finalName, language = languageFromFilename(finalName))
 
         _state.value = _state.value.copy(files = files)
+        val pid = currentProjectId ?: return
         viewModelScope.launch {
-            files[nodeId]?.let { repo.upsertFile(it) }
-            node.parentId?.let { oldPid -> files[oldPid]?.let { repo.upsertFile(it) } }
-            newParentId?.let { newPid -> files[newPid]?.let { repo.upsertFile(it) } }
+            if (finalName != node.name) {
+                repo.renameFile(pid, nodeId, finalName)
+            }
+            repo.moveFile(pid, nodeId, newParentId)
         }
     }
 
@@ -449,11 +559,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveFile(id: String) {
-        val file = _state.value.files[id] ?: return
-        val files = _state.value.files.toMutableMap()
-        files[id] = file.copy(isUnsaved = false)
-        _state.value = _state.value.copy(files = files)
-        viewModelScope.launch { file.content?.let { repo.markFileSaved(currentProjectId ?: return@launch, id, it) } }
+        saveFileToDisk(id)
     }
 
     fun saveAllFiles() {
@@ -639,6 +745,19 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 delay(30_000)
                 saveAllFiles()
             }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        autoSaveJob?.cancel()
+        autoSaveJob = null
+        watcherCollectorJob?.cancel()
+        watcherCollectorJob = null
+        currentWatcherSessionId = null
+        val projectName = currentProjectName
+        if (projectName != null) {
+            FileWatcherService.stopWatchingProject(projectName)
         }
     }
 }

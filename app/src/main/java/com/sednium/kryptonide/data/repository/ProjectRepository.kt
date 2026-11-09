@@ -1,6 +1,10 @@
 package com.sednium.kryptonide.data.repository
 
 import com.sednium.kryptonide.utils.StorageUtils
+import com.sednium.kryptonide.utils.BinaryFileDetector
+import com.sednium.kryptonide.utils.ProjectDirectoryResolver
+import com.sednium.kryptonide.utils.ProjectDirResult
+import com.sednium.kryptonide.utils.SafeFileIO
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.sednium.kryptonide.data.model.*
 import com.sednium.kryptonide.data.storage.AppDatabase
@@ -44,26 +48,11 @@ class ProjectRepository(private val db: AppDatabase) {
     }
 
     fun getProjectDir(project: Project): File {
-        if (project.path.isNotBlank()) {
-            val f = File(project.path)
-            if (f.exists()) return f
-        }
-        val projectsSubdir = File(StorageUtils.getProjectsDir(), project.name)
-        if (projectsSubdir.exists()) return projectsSubdir
+        return ProjectDirectoryResolver.resolve(project).directoryOrPreferred()
+    }
 
-        val rootPath = File(StorageUtils.getKryptonideRoot(), project.name)
-        if (rootPath.exists() && rootPath.name !in KRYPTON_INTERNAL_DIRS && !rootPath.name.startsWith(".")) {
-            val migrated = File(StorageUtils.getProjectsDir(), project.name)
-            if (rootPath.renameTo(migrated)) {
-                return migrated
-            }
-            return rootPath
-        }
-
-        val legacyPath = File(StorageUtils.getExternalStorageDir(), "KryptonIDE/${project.name}")
-        if (legacyPath.exists()) return legacyPath
-
-        return projectsSubdir
+    fun resolveProjectDir(project: Project): ProjectDirResult {
+        return ProjectDirectoryResolver.resolve(project)
     }
 
     suspend fun getAllProjects(): List<Project> = withContext(Dispatchers.IO) {
@@ -72,14 +61,12 @@ class ProjectRepository(private val db: AppDatabase) {
         
         projects.forEach { p ->
             val isInternal = p.name.startsWith(".") || p.name.lowercase() in KRYPTON_INTERNAL_DIRS
-            val projectDir = getProjectDir(p)
             if (isInternal) {
-                // Purge internal directories from Room DB projects
+                // Purge internal directories from projects database
                 db.deleteProject(p.id)
-            } else if (projectDir.exists()) {
-                validProjects.add(p)
             } else {
-                db.deleteProject(p.id)
+                // Data-integrity fix: NEVER silently delete user projects from database if storage is unmounted or directory is missing!
+                validProjects.add(p)
             }
         }
         
@@ -91,9 +78,6 @@ class ProjectRepository(private val db: AppDatabase) {
             if (key !in seenNames) {
                 seenNames.add(key)
                 deduplicated.add(p)
-            } else {
-                // Prune duplicate record with the same project name
-                db.deleteProject(p.id)
             }
         }
         deduplicated
@@ -275,14 +259,26 @@ class ProjectRepository(private val db: AppDatabase) {
                 if (physicalFile.parentFile?.exists() == false) {
                     physicalFile.parentFile?.mkdirs()
                 }
-                val contentToWrite = targetNode.content ?: ""
-                if (!physicalFile.exists() || physicalFile.readText() != contentToWrite) {
-                    FileWatcherService.suppressPath(physicalFile.absolutePath)
-                    physicalFile.writeText(contentToWrite)
+                // Never overwrite binary or large files where content is null!
+                val contentToWrite = targetNode.content
+                if (contentToWrite != null) {
+                    val isBinary = physicalFile.exists() && BinaryFileDetector.isBinaryFile(physicalFile)
+                    if (!isBinary) {
+                        val currentText = if (physicalFile.exists() && !BinaryFileDetector.isExceedingTextLimit(physicalFile)) {
+                            runCatching { physicalFile.readText() }.getOrNull()
+                        } else null
+
+                        if (currentText != contentToWrite) {
+                            FileWatcherService.suppressPath(physicalFile.absolutePath)
+                            SafeFileIO.writeAtomically(physicalFile, contentToWrite)
+                        }
+                    }
                 }
             }
-        } catch (_: Exception) {
-            // Log or suppress write errors gracefully
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            android.util.Log.e("ProjectRepository", "Failed to sync file to disk: ${physicalFile.path}", e)
+            throw e
         }
     }
 
@@ -322,6 +318,116 @@ class ProjectRepository(private val db: AppDatabase) {
         }
     }
 
+    suspend fun renameFile(projectId: String, fileId: String, newName: String): Boolean = withContext(Dispatchers.IO) {
+        val project = getProject(projectId) ?: return@withContext false
+        val allFiles = db.getFiles(projectId).toMutableList()
+        val idx = allFiles.indexOfFirst { it.id == fileId }
+        if (idx < 0) return@withContext false
+        val targetNode = allFiles[idx]
+
+        val nodeMap = allFiles.associateBy { it.id }
+        fun getRelativePath(node: FileNode, nameOverride: String? = null): String {
+            val parts = mutableListOf(nameOverride ?: node.name)
+            var currId = node.parentId
+            while (currId != null) {
+                val parent = nodeMap[currId]
+                if (parent != null && parent.parentId != null) { 
+                    parts.add(0, parent.name)
+                    currId = parent.parentId 
+                } else break
+            }
+            return parts.joinToString("/")
+        }
+
+        val projectDir = getProjectDir(project)
+        val oldRelPath = getRelativePath(targetNode)
+        val newRelPath = getRelativePath(targetNode, newName)
+        val oldFile = File(projectDir, oldRelPath)
+        val newFile = File(projectDir, newRelPath)
+
+        if (oldFile.exists() && oldFile != newFile) {
+            FileWatcherService.suppressPath(oldFile.absolutePath)
+            FileWatcherService.suppressPath(newFile.absolutePath)
+            val parent = newFile.parentFile
+            if (parent != null && !parent.exists()) parent.mkdirs()
+            val moved = oldFile.renameTo(newFile)
+            if (!moved) {
+                try {
+                    oldFile.copyRecursively(newFile, overwrite = true)
+                    oldFile.deleteRecursively()
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    return@withContext false
+                }
+            }
+        }
+
+        allFiles[idx] = targetNode.copy(name = newName, language = languageFromFilename(newName))
+        db.saveFiles(projectId, allFiles)
+        true
+    }
+
+    suspend fun moveFile(projectId: String, fileId: String, newParentId: String?): Boolean = withContext(Dispatchers.IO) {
+        val project = getProject(projectId) ?: return@withContext false
+        val allFiles = db.getFiles(projectId).toMutableList()
+        val idx = allFiles.indexOfFirst { it.id == fileId }
+        if (idx < 0) return@withContext false
+        val targetNode = allFiles[idx]
+
+        val nodeMap = allFiles.associateBy { it.id }
+        fun getRelativePath(node: FileNode, parentIdOverride: String? = null): String {
+            val parts = mutableListOf(node.name)
+            var currId = if (parentIdOverride != null) parentIdOverride else node.parentId
+            while (currId != null) {
+                val parent = nodeMap[currId]
+                if (parent != null && parent.parentId != null) { 
+                    parts.add(0, parent.name)
+                    currId = parent.parentId 
+                } else break
+            }
+            return parts.joinToString("/")
+        }
+
+        val projectDir = getProjectDir(project)
+        val oldRelPath = getRelativePath(targetNode)
+        val newRelPath = getRelativePath(targetNode, newParentId)
+        val oldFile = File(projectDir, oldRelPath)
+        val newFile = File(projectDir, newRelPath)
+
+        if (oldFile.exists() && oldFile != newFile) {
+            FileWatcherService.suppressPath(oldFile.absolutePath)
+            FileWatcherService.suppressPath(newFile.absolutePath)
+            val parent = newFile.parentFile
+            if (parent != null && !parent.exists()) parent.mkdirs()
+            val moved = oldFile.renameTo(newFile)
+            if (!moved) {
+                try {
+                    oldFile.copyRecursively(newFile, overwrite = true)
+                    oldFile.deleteRecursively()
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    return@withContext false
+                }
+            }
+        }
+
+        allFiles[idx] = targetNode.copy(parentId = newParentId)
+        val oldParentId = targetNode.parentId
+        if (oldParentId != null) {
+            val oldPIdx = allFiles.indexOfFirst { it.id == oldParentId }
+            if (oldPIdx >= 0) allFiles[oldPIdx] = allFiles[oldPIdx].copy(childrenIds = allFiles[oldPIdx].childrenIds - fileId)
+        }
+        if (newParentId != null) {
+            val newPIdx = allFiles.indexOfFirst { it.id == newParentId }
+            if (newPIdx >= 0 && fileId !in allFiles[newPIdx].childrenIds) {
+                allFiles[newPIdx] = allFiles[newPIdx].copy(childrenIds = allFiles[newPIdx].childrenIds + fileId)
+            }
+        }
+
+        db.saveFiles(projectId, allFiles)
+        true
+    }
+
     suspend fun syncFullProject(projectId: String) {
         val project = getProject(projectId) ?: return
         val projectDir = getProjectDir(project)
@@ -356,13 +462,13 @@ class ProjectRepository(private val db: AppDatabase) {
                     )
                     walk(child, nodeId)
                 } else {
-                    val content = if (isLikelyTextFile(child) && child.length() < 2_000_000L) {
+                    val content = if (BinaryFileDetector.isTextFile(child) && !BinaryFileDetector.isExceedingTextLimit(child)) {
                         runCatching { child.readText() }.getOrNull()
                     } else null
                     nodes += FileNode(
                         id = nodeId, projectId = projectId, parentId = parentId,
                         name = child.name, type = FileType.FILE,
-                        content = content ?: "",
+                        content = content,
                         language = languageFromFilename(child.name)
                     )
                 }
@@ -499,17 +605,27 @@ class ProjectRepository(private val db: AppDatabase) {
                 if (node.type == FileType.FOLDER) {
                     if (!physicalFile.exists()) physicalFile.mkdirs()
                 } else {
+                    // Null content indicates binary or non-text file; NEVER overwrite with empty string!
+                    val contentToWrite = node.content ?: return@forEach
+                    val isBinary = physicalFile.exists() && (BinaryFileDetector.isBinaryFile(physicalFile) || BinaryFileDetector.isExceedingTextLimit(physicalFile))
+                    if (isBinary) return@forEach
+
                     if (physicalFile.parentFile?.exists() == false) {
                         physicalFile.parentFile?.mkdirs()
                     }
-                    val contentToWrite = node.content ?: ""
-                    if (!physicalFile.exists() || physicalFile.readText() != contentToWrite) {
-                        physicalFile.writeText(contentToWrite)
+                    val currentText = if (physicalFile.exists() && !BinaryFileDetector.isExceedingTextLimit(physicalFile)) {
+                        runCatching { physicalFile.readText() }.getOrNull()
+                    } else null
+
+                    if (currentText != contentToWrite) {
+                        FileWatcherService.suppressPath(physicalFile.absolutePath)
+                        SafeFileIO.writeAtomically(physicalFile, contentToWrite)
                     }
                 }
             }
         } catch (e: Exception) { 
-            e.printStackTrace() 
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            android.util.Log.e("ProjectRepository", "Failed to sync project to disk: ${projectDir.path}", e)
         }
     }
 
@@ -626,7 +742,21 @@ class ProjectRepository(private val db: AppDatabase) {
     suspend fun resyncProjectFromDisk(projectId: String): List<FileNode> = withContext(Dispatchers.IO) {
         val project  = getProject(projectId) ?: return@withContext emptyList()
         val existing = db.getFiles(projectId).toMutableList()
-        val diskFiles = FileWatcherService.scanProjectFiles(project.name)
+        val projectDir = getProjectDir(project)
+
+        if (!projectDir.exists() || !projectDir.isDirectory) {
+            // Project directory is missing or storage is unmounted. DO NOT delete database files!
+            return@withContext existing
+        }
+
+        val scanSummary = FileWatcherService.scanProjectFilesDetailed(project.name, projectDir)
+        if (scanSummary.hasScanError && scanSummary.files.isEmpty()) {
+            // Root scan failed (permission denied or I/O failure). DO NOT delete database files!
+            android.util.Log.e("ProjectRepository", "Scan failed for ${project.name}; skipping resync to prevent data loss")
+            return@withContext existing
+        }
+
+        val diskFiles = scanSummary.files
 
         val existingByPath = mutableMapOf<String, FileNode>()
         val nodeMap = existing.associateBy { it.id }
@@ -643,6 +773,10 @@ class ProjectRepository(private val db: AppDatabase) {
         // ── Step 1: Add / update ──────────────────────────────────────────────
         diskFiles.forEach { diskFile ->
             val existingNode = existingByPath[diskFile.relativePath]
+            val fileObj = File(diskFile.absolutePath)
+            val isDir = diskFile.isDirectory
+            val isBinary = !isDir && (BinaryFileDetector.isBinaryFile(fileObj) || BinaryFileDetector.isExceedingTextLimit(fileObj))
+
             if (existingNode == null) {
                 // New file on disk → create FileNode
                 val parentPath = diskFile.relativePath.substringBeforeLast("/", "")
@@ -653,44 +787,61 @@ class ProjectRepository(private val db: AppDatabase) {
                         ?: createParentFolders(parentPath, projectId, result, existingByPath)
                 }
 
+                val textContent = if (!isDir && !isBinary) {
+                    runCatching { fileObj.readText() }.getOrNull()
+                } else null
+
                 val newNode = FileNode(
                     id        = java.util.UUID.randomUUID().toString(),
                     projectId = projectId,
                     name      = diskFile.name,
-                    type      = if (diskFile.isDirectory) FileType.FOLDER else FileType.FILE,
+                    type      = if (isDir) FileType.FOLDER else FileType.FILE,
                     parentId  = parentId,
-                    content   = if (!diskFile.isDirectory) {
-                        runCatching { File(diskFile.absolutePath).readText() }.getOrElse { "" }
-                    } else null,
+                    content   = textContent,
                     language  = languageFromFilename(diskFile.name),
                     isUnsaved = false
                 )
                 result.add(newNode)
                 existingByPath[diskFile.relativePath] = newNode
 
-            } else if (!diskFile.isDirectory && !existingNode.isUnsaved) {
-                // Existing file was modified externally — update content
-                val diskContent = runCatching {
-                    File(diskFile.absolutePath).readText()
-                }.getOrElse { existingNode.content ?: "" }
+            } else if (!isDir && !existingNode.isUnsaved) {
+                // Existing file was modified externally — update content if text
+                if (!isBinary) {
+                    val diskContent = runCatching {
+                        fileObj.readText()
+                    }.getOrNull()
 
-                if (diskContent != existingNode.content) {
-                    val idx = result.indexOfFirst { it.id == existingNode.id }
-                    if (idx >= 0) {
-                        result[idx] = existingNode.copy(content = diskContent, isUnsaved = false)
+                    if (diskContent != null && diskContent != existingNode.content) {
+                        val idx = result.indexOfFirst { it.id == existingNode.id }
+                        if (idx >= 0) {
+                            result[idx] = existingNode.copy(content = diskContent, isUnsaved = false)
+                        }
                     }
                 }
             }
         }
 
-        // ── Step 2: Remove deleted files ──────────────────────────────────────
+        // ── Step 2: Remove deleted files conservatively ───────────────────────
         val toRemove = existingByPath.entries
-            .filter { (path, _) -> !diskByPath.containsKey(path) }
+            .filter { (path, _) -> 
+                !diskByPath.containsKey(path) &&
+                scanSummary.unreadableDirectories.none { unreadable -> path == unreadable || path.startsWith("$unreadable/") }
+            }
             .map { it.value.id }
             .toSet()
 
         if (toRemove.isNotEmpty()) {
-            result.removeAll { it.id in toRemove }
+            val dirItems = projectDir.listFiles()
+            if (dirItems == null) {
+                // Cannot list root directory; permission error or I/O failure. Abort deletion!
+                android.util.Log.w("ProjectRepository", "Cannot list project directory; skipping deletions")
+            } else if (toRemove.size >= existingByPath.size && dirItems.isNotEmpty()) {
+                // If disk scanning reported everything missing but the folder is accessible and non-empty,
+                // abort mass deletion as a safety measure.
+                android.util.Log.w("ProjectRepository", "Resync scan produced suspicious empty result; skipping file deletions for safety")
+            } else {
+                result.removeAll { it.id in toRemove }
+            }
         }
 
         // ── Step 3: Re-wire childrenIds ───────────────────────────────────────
@@ -732,15 +883,20 @@ class ProjectRepository(private val db: AppDatabase) {
             val id         = java.util.UUID.randomUUID().toString()
             pathToId[f.relativePath] = id
 
+            val fileObj = File(f.absolutePath)
+            val isDir = f.isDirectory
+            val isBinary = !isDir && (BinaryFileDetector.isBinaryFile(fileObj) || BinaryFileDetector.isExceedingTextLimit(fileObj))
+            val textContent = if (!isDir && !isBinary) {
+                runCatching { fileObj.readText() }.getOrNull()
+            } else null
+
             nodes.add(FileNode(
                 id        = id,
                 projectId = projectId,
                 name      = f.name,
-                type      = if (f.isDirectory) FileType.FOLDER else FileType.FILE,
+                type      = if (isDir) FileType.FOLDER else FileType.FILE,
                 parentId  = parentId,
-                content   = if (!f.isDirectory) {
-                    runCatching { File(f.absolutePath).readText() }.getOrElse { "" }
-                } else null,
+                content   = textContent,
                 language  = languageFromFilename(f.name),
                 isUnsaved = false
             ))

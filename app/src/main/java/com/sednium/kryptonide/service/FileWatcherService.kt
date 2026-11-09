@@ -1,7 +1,11 @@
 package com.sednium.kryptonide.service
 
-import com.sednium.kryptonide.utils.StorageUtils
+import com.sednium.kryptonide.data.model.Project
+import com.sednium.kryptonide.data.model.ProjectTemplate
+import com.sednium.kryptonide.utils.ProjectDirectoryResolver
+import com.sednium.kryptonide.utils.ProjectDirResult
 import com.sednium.kryptonide.utils.RecursiveFileObserver
+import com.sednium.kryptonide.utils.StorageUtils
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -14,6 +18,7 @@ sealed class DiskSyncEvent {
     data class FileDeleted(val absolutePath: String, val projectName: String) : DiskSyncEvent()
     data class FileMoved(val fromPath: String, val toPath: String, val projectName: String) : DiskSyncEvent()
     data class ProjectDiscovered(val projectName: String, val path: String) : DiskSyncEvent()
+    data class RescanRequired(val projectName: String) : DiskSyncEvent()
 }
 
 object FileWatcherService {
@@ -23,6 +28,28 @@ object FileWatcherService {
         extraBufferCapacity = 64
     )
     val events: SharedFlow<DiskSyncEvent> = _events.asSharedFlow()
+
+    // Overflow tracking and debounced recovery for eventual consistency
+    val hasDroppedEvents = java.util.concurrent.atomic.AtomicBoolean(false)
+    val overflowProjects = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val overflowRecoveryJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
+
+    internal fun safeEmit(event: DiskSyncEvent, projectName: String) {
+        val success = _events.tryEmit(event)
+        if (!success) {
+            hasDroppedEvents.set(true)
+            overflowProjects[projectName] = true
+            overflowRecoveryJobs.compute(projectName) { _, existingJob ->
+                existingJob?.cancel()
+                scope.launch {
+                    delay(300)
+                    // Suspending emit guarantees delivery when buffer opens
+                    _events.emit(DiskSyncEvent.RescanRequired(projectName))
+                    overflowProjects.remove(projectName)
+                }
+            }
+        }
+    }
 
     // Paths the APP itself is currently writing — suppress these from sync loop
     private val selfWritePaths = mutableSetOf<String>()
@@ -53,16 +80,48 @@ object FileWatcherService {
         synchronized(selfWriteLock) { path in selfWritePaths }
 
     private val INTERNAL_DIRS = com.sednium.kryptonide.data.repository.ProjectRepository.KRYPTON_INTERNAL_DIRS
-    val IGNORED_SCAN_DIRS = setOf("node_modules", ".git", ".gradle", "build", ".next", "dist", "target", ".turbo", ".idea", "__pycache__", ".pytest_cache")
+    val IGNORED_SCAN_DIRS = setOf(
+        ".git", ".gradle", "build", "node_modules", ".next", "dist",
+        "target", ".turbo", ".idea", "__pycache__", ".pytest_cache",
+        ".dart_tool", ".checkpoints"
+    )
+
+    val IGNORED_EXACT_NAMES = setOf(
+        ".metadata", ".nomedia", ".DS_Store", "Thumbs.db",
+        "desktop.ini", ".system_generated"
+    )
+
+    val IGNORED_TEMP_EXTENSIONS = setOf(
+        "tmp", "swp", "swo", "bak", "orig", "lock", "lck"
+    )
+
+    fun shouldIncludeInScan(file: File): Boolean {
+        val name = file.name
+        if (name in IGNORED_EXACT_NAMES) return false
+        if (name.startsWith("~") || name.endsWith("~")) return false
+        val ext = file.extension.lowercase()
+        if (ext in IGNORED_TEMP_EXTENSIONS) return false
+        if (file.isDirectory && name in IGNORED_SCAN_DIRS) return false
+        return true
+    }
 
     // ── Start watching a project directory ────────────────────────────────────
-    fun startWatching(projectName: String) {
+    fun startWatching(projectName: String, projectDir: File? = null) {
         val lower = projectName.lowercase()
         if (lower.isEmpty() || lower in INTERNAL_DIRS || observers.containsKey(projectName)) return
-        val projectDir = File(kryptonProjects, projectName)
-        if (!projectDir.exists()) projectDir.mkdirs()
 
-        val observer = RecursiveFileObserver(projectDir.absolutePath) { event, path ->
+        val targetDir = projectDir ?: run {
+            val stub = Project(id = "", name = projectName, template = ProjectTemplate.BLANK)
+            val res = ProjectDirectoryResolver.resolve(stub)
+            if (res is ProjectDirResult.Resolved) res.directory else null
+        }
+
+        // Never auto-create non-existent directory on watcher start!
+        if (targetDir == null || !targetDir.exists() || !targetDir.isDirectory) {
+            return
+        }
+
+        val observer = RecursiveFileObserver(targetDir.absolutePath) { event, path ->
             handleFsEvent(event, path, projectName)
         }
         observer.startWatching()
@@ -91,22 +150,19 @@ object FileWatcherService {
 
         val file     = File(absolutePath)
         val fileName = file.name
+        val ext      = file.extension.lowercase()
 
-        // ── Ignore system / metadata / temp files ─────────────────────
-        val IGNORED_NAMES = setOf(".metadata", ".nomedia", ".DS_Store", "Thumbs.db", "desktop.ini")
-        val IGNORED_EXTS  = setOf("tmp", "swp", "swo", "bak", "orig", "lock", "lck")
-        val ext = fileName.substringAfterLast('.', "")
+        // ── Ignore noise and internal tool artifacts, but keep dotfiles (.gitignore, .env, .github, etc.) ─────
+        if (fileName in IGNORED_EXACT_NAMES) return
+        if (fileName.startsWith("~") || fileName.endsWith("~")) return
+        if (ext in IGNORED_TEMP_EXTENSIONS) return
 
-        if (fileName in IGNORED_NAMES)                  return
-        if (fileName.startsWith(".") || fileName.startsWith("~")) return
-        if (ext in IGNORED_EXTS)                        return
-        // ── Ignore KryptonIDE internal build/cache dirs ───────────────
-        if (absolutePath.contains("/.krypton_")
-            || absolutePath.contains("/.metadata")
-            || absolutePath.contains("/build/")
-            || absolutePath.contains("/.gradle/")
-            || INTERNAL_DIRS.any { absolutePath.contains("/$it/") || absolutePath.endsWith("/$it") }) return
-        if (isSuppressed(absolutePath))                  return
+        // ── Ignore build/cache and internal directories ───────────────
+        if (file.isDirectory && fileName in IGNORED_SCAN_DIRS) return
+        if (IGNORED_SCAN_DIRS.any { absolutePath.contains("/$it/") || absolutePath.endsWith("/$it") }) return
+        if (IGNORED_EXACT_NAMES.any { absolutePath.contains("/$it/") || absolutePath.endsWith("/$it") }) return
+        if (INTERNAL_DIRS.any { absolutePath.contains("/$it/") || absolutePath.endsWith("/$it") }) return
+        if (isSuppressed(absolutePath)) return
 
         // FileObserver event masks
         val CREATE  = android.os.FileObserver.CREATE
@@ -125,35 +181,33 @@ object FileWatcherService {
                     // New dir — start watching it too
                     scope.launch { registerSubdir(absolutePath, projectName) }
                 }
-                _events.tryEmit(DiskSyncEvent.FileCreated(absolutePath, projectName))
+                safeEmit(DiskSyncEvent.FileCreated(absolutePath, projectName), projectName)
             }
 
             CLOSE_WRITE, MODIFY -> debounce(absolutePath) {
                 if (File(absolutePath).isFile) {
-                    _events.tryEmit(DiskSyncEvent.FileModified(absolutePath, projectName))
+                    safeEmit(DiskSyncEvent.FileModified(absolutePath, projectName), projectName)
                 }
             }
 
             DELETE, MOVED_FROM -> {
                 // No debounce for deletes — emit immediately
-                _events.tryEmit(DiskSyncEvent.FileDeleted(absolutePath, projectName))
+                safeEmit(DiskSyncEvent.FileDeleted(absolutePath, projectName), projectName)
             }
 
             MOVED_TO -> debounce(absolutePath) {
-                _events.tryEmit(DiskSyncEvent.FileCreated(absolutePath, projectName))
+                safeEmit(DiskSyncEvent.FileCreated(absolutePath, projectName), projectName)
             }
         }
     }
 
     private fun registerSubdir(path: String, projectName: String) {
-        // RecursiveFileObserver already handles subdirs, but if a new dir
-        // is created after startWatching() we need to restart to include it.
         val obs = observers[projectName] ?: return
         obs.stopWatching()
-        obs.startWatching()   // RecursiveFileObserver rescans the tree
+        obs.startWatching()
     }
 
-    // ── Debounce rapid events (e.g. editor autosave writes multiple chunks) ───
+    // ── Debounce rapid events ───
     private fun debounce(path: String, action: suspend () -> Unit) {
         debounceJobs[path]?.cancel()
         debounceJobs[path] = scope.launch {
@@ -164,24 +218,56 @@ object FileWatcherService {
     }
 
     // ── Scan project files (used by repository) ───────────────────────────────
-    fun scanProjectFiles(projectName: String): List<DiskFile> {
-        val dir = File(kryptonProjects, projectName)
-        return if (dir.exists()) scanDir(dir, dir) else emptyList()
+    fun scanProjectFiles(projectName: String, projectDir: File? = null): List<DiskFile> {
+        return scanProjectFilesDetailed(projectName, projectDir).files
     }
 
-    private fun scanDir(root: File, current: File): List<DiskFile> {
+    fun scanProjectFilesDetailed(projectName: String, projectDir: File? = null): ScanSummary {
+        val dir = projectDir ?: run {
+            val stub = Project(id = "", name = projectName, template = ProjectTemplate.BLANK)
+            val res = ProjectDirectoryResolver.resolve(stub)
+            if (res is ProjectDirResult.Resolved) res.directory else null
+        } ?: return ScanSummary(emptyList(), hasScanError = true)
+
+        if (!dir.exists() || !dir.isDirectory || !dir.canRead()) {
+            return ScanSummary(emptyList(), hasScanError = true)
+        }
+
+        val rootItems = dir.listFiles() ?: return ScanSummary(emptyList(), hasScanError = true)
+
+        val unreadableDirs = mutableSetOf<String>()
+        var hasError = false
         val result = mutableListOf<DiskFile>()
-        current.listFiles()
-            ?.filter { !it.name.startsWith(".") && it.name !in IGNORED_SCAN_DIRS }
-            ?.sortedBy { it.name }
-            ?.forEach { f ->
-                val rel = f.absolutePath.removePrefix(root.absolutePath).trimStart('/')
-                result.add(DiskFile(f.name, rel, f.isDirectory, f.absolutePath))
-                if (f.isDirectory) result.addAll(scanDir(root, f))
+
+        fun scan(current: File) {
+            val items = current.listFiles()
+            if (items == null) {
+                hasError = true
+                val rel = current.absolutePath.removePrefix(dir.absolutePath).trimStart('/')
+                if (rel.isNotEmpty()) unreadableDirs.add(rel)
+                return
             }
-        return result
+            items.filter { shouldIncludeInScan(it) }
+                .sortedBy { it.name }
+                .forEach { f ->
+                    val rel = f.absolutePath.removePrefix(dir.absolutePath).trimStart('/')
+                    result.add(DiskFile(f.name, rel, f.isDirectory, f.absolutePath))
+                    if (f.isDirectory) {
+                        scan(f)
+                    }
+                }
+        }
+
+        scan(dir)
+        return ScanSummary(result, hasScanError = hasError, unreadableDirectories = unreadableDirs)
     }
 }
+
+data class ScanSummary(
+    val files: List<DiskFile>,
+    val hasScanError: Boolean = false,
+    val unreadableDirectories: Set<String> = emptySet()
+)
 
 data class DiskFile(
     val name:         String,

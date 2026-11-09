@@ -87,9 +87,6 @@ class ProjectsViewModel(app: Application) : AndroidViewModel(app) {
 
             // 2. Background check for externally added folders without blocking the UI
             withContext(Dispatchers.IO) {
-                // Ensure legacy and root project migrations have completed
-                StorageUtils.migrateRootProjectsToProjectsSubdir(StorageUtils.getKryptonideRoot())
-
                 val projectsDir = StorageUtils.getProjectsDir()
                 val diskFolders = mutableListOf<String>()
                 if (projectsDir.exists()) {

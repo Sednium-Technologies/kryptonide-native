@@ -31,7 +31,7 @@ Whether building full-stack web applications, debugging complex codebases, revie
 ## ✨ Key Capabilities & Highlights
 
 ### ⚡ 1. Native Hardware-Accelerated Editor Surface
-- **Sora & Monaco Editor Core**: Direct Android Canvas drawing without WebView latency or layout drift.
+- **Sora Native Editor Core**: Direct Android Canvas drawing without WebView latency or layout drift.
 - **Monospace Typography**: Bundled with JetBrains Mono, Fira Code, and customizable font support with zero font measurement desynchronization.
 - **Developer Ergonomics**:
   - Precision caret navigation and touch-selection teardrops.

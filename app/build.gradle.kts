@@ -126,6 +126,17 @@ android {
     unitTests {
       isIncludeAndroidResources = true
       isReturnDefaultValues = true
+      all {
+        // Robolectric 4.17 reflects into JDK internals (FileDescriptor /
+        // SharedSecrets) when running on JDK 21. Without these opens every
+        // Robolectric test fails before it even reaches the test body.
+        it.jvmArgs(
+          "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED",
+          "--add-opens=java.base/java.io=ALL-UNNAMED",
+          "--add-opens=java.base/java.lang=ALL-UNNAMED",
+          "--add-opens=java.base/java.util=ALL-UNNAMED"
+        )
+      }
     }
   }
 }

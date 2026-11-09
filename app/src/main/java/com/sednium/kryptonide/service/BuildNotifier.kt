@@ -1,5 +1,6 @@
 package com.sednium.kryptonide.service
 
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -39,6 +40,7 @@ object BuildNotifier {
     /** True if notifications can actually be shown — caller can use this to skip silently pre-API33 permission prompts. */
     fun canNotify(context: Context): Boolean = NotificationManagerCompat.from(context).areNotificationsEnabled()
 
+    @SuppressLint("MissingPermission")
     fun progress(context: Context, title: String, message: String, indeterminate: Boolean = true, percent: Int = 0) {
         if (!canNotify(context)) return
         ensureChannel(context)
@@ -49,6 +51,7 @@ object BuildNotifier {
         runCatching { NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification) }
     }
 
+    @SuppressLint("MissingPermission")
     fun success(context: Context, title: String, message: String) {
         if (!canNotify(context)) return
         ensureChannel(context)
@@ -60,6 +63,7 @@ object BuildNotifier {
         runCatching { NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification) }
     }
 
+    @SuppressLint("MissingPermission")
     fun failure(context: Context, title: String, message: String) {
         if (!canNotify(context)) return
         ensureChannel(context)

@@ -36,8 +36,6 @@ object StorageUtils {
             root.mkdirs()
         }
         ensureRootStructure(root)
-        migrateLegacyDirectoryIfNeeded(root)
-        migrateRootProjectsToProjectsSubdir(root)
         return root
     }
 

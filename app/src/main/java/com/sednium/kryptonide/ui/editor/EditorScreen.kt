@@ -417,8 +417,8 @@ fun EditorScreen(
     // injection needed (that was a Monaco-only detour).
     LaunchedEffect(fontSelection, isEditorReady.value) {
         if (!isEditorReady.value) return@LaunchedEffect
-            val sel = fontSelection ?: return@LaunchedEffect
-            val typeface = withContext(Dispatchers.IO) {
+        val sel = fontSelection ?: return@LaunchedEffect
+        val typeface = withContext(Dispatchers.IO) {
                 runCatching {
                     if (sel.font.isCustom) {
                         val path = sel.font.filePath ?: return@runCatching null
