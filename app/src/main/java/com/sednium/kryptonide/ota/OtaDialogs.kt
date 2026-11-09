@@ -481,7 +481,7 @@ fun RaiseIssueSheet(
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        "Includes Kryptonide v4.0, Android OS, Device Model, and RAM",
+                        "Includes Kryptonide v1.0, Android OS, Device Model, and RAM",
                         color = colors.Muted,
                         fontSize = 11.sp
                     )

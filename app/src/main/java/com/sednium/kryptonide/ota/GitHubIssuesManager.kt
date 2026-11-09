@@ -46,7 +46,7 @@ object GitHubIssuesManager {
         val reqBuilder = Request.Builder()
             .url(url)
             .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "KryptonIDE-Android/4.0")
+            .header("User-Agent", "KryptonIDE-Android/1.0")
 
         if (!token.isNullOrBlank()) {
             reqBuilder.header("Authorization", "Bearer $token")
@@ -117,7 +117,7 @@ object GitHubIssuesManager {
             .url(url)
             .header("Accept", "application/vnd.github+json")
             .header("Authorization", "Bearer $token")
-            .header("User-Agent", "KryptonIDE-Android/4.0")
+            .header("User-Agent", "KryptonIDE-Android/1.0")
             .post(requestJson.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
@@ -170,8 +170,8 @@ object GitHubIssuesManager {
         val freeRamMb = memInfo.availMem / (1024 * 1024)
         val totalRamMb = memInfo.totalMem / (1024 * 1024)
 
-        val version = try { BuildConfig.VERSION_NAME } catch (e: Throwable) { "4.0" }
-        val code = try { BuildConfig.VERSION_CODE } catch (e: Throwable) { 40 }
+        val version = try { BuildConfig.VERSION_NAME } catch (e: Throwable) { "1.0" }
+        val code = try { BuildConfig.VERSION_CODE } catch (e: Throwable) { 1 }
 
         return """
             

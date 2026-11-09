@@ -57,7 +57,7 @@ object OtaUpdateManager {
     const val REPO_OWNER = "Sednium-Technologies"
     const val REPO_NAME = "kryptonide-native"
     const val GITHUB_REPO_URL = "https://github.com/$REPO_OWNER/$REPO_NAME"
-    const val DEFAULT_BASE_VERSION = "4.0"
+    const val DEFAULT_BASE_VERSION = "1.0"
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

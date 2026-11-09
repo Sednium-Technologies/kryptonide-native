@@ -1,151 +1,297 @@
-# KryptonIDE
+# Kryptonide
 
 <p align="center">
-  <strong>The Next-Generation Native Mobile IDE & Autonomous On-Device AI Development Environment for Android</strong>
+  <strong>A native Android IDE with an on-device AI workflow.</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Android_8.0+_(API_26--35)-brightgreen.svg" alt="Platform" />
-  <img src="https://img.shields.io/badge/Language-Kotlin_2.0_%7C_C++20-blue.svg" alt="Language" />
-  <img src="https://img.shields.io/badge/UI-Jetpack_Compose_120Hz-orange.svg" alt="UI" />
-  <img src="https://img.shields.io/badge/Local_AI-MiniCPM_1B_GGUF-purple.svg" alt="Local AI" />
-  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
+  <img src="https://img.shields.io/badge/Android-API%2026%2B-3DDC84?logo=android&logoColor=white" alt="Android API 26+" />
+  <img src="https://img.shields.io/badge/Kotlin-2.4.21-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin" />
+  <img src="https://img.shields.io/badge/Jetpack%20Compose-Native-4285F4?logo=jetpackcompose&logoColor=white" alt="Jetpack Compose" />
+  <img src="https://img.shields.io/badge/Editor-Sora-222222" alt="Sora Editor" />
+  <img src="https://img.shields.io/badge/License-MIT-2EA44F" alt="MIT License" />
 </p>
 
 ---
+
+Kryptonide turns an Android device into a portable development workspace. Built natively with Kotlin, Jetpack Compose, and the [Sora Editor](https://github.com/Rosemoe/sora-editor), it brings together code editing, project management, Git/GitHub workflows, a built-in shell, web previews, and AI-powered development assistance.
+
+> [!NOTE]
+> **Project Status:** Actively developed. Some features depend on device architecture, installed command-line tools, storage permissions, network access, or third-party API providers.  
+> More patch updates will come. If you find issues, submit them via the [GitHub Issues](https://github.com/Sednium-Technologies/kryptonide-native/issues) tab or in-app, and we will address them.
+
+---
+
+## What is Kryptonide?
+
+Kryptonide is designed for writing, navigating, running, and maintaining software projects directly from Android.
+
+Its native interface is powered by Kotlin and Android APIs rather than a browser-based IDE shell. The application combines a native code editor with an extensible development workspace and an AI layer supporting both local models and configured cloud providers.
+
+The goal is simple: make Android a capable development environment without sacrificing the flexibility developers expect from a modern IDE.
+
+---
+
+## Features
+
+### ⚡ Native Code Editing
+- **Sora Editor Core:** Direct hardware-accelerated code editing engine.
+- **Language-Aware Editing:** Syntax highlighting and tokenization across modern programming languages.
+- **Visual Customization:** Editor themes, typography and font customization, and configurable keymaps.
+- **Project Navigation:** Fast file and folder tree navigation with gesture controls.
+- **Multi-File Workflows:** Multi-tab document management and quick project switching.
+- **Productivity Tooling:** In-editor search and replace, code formatting, and code-assistance integrations.
+
+### 🧠 AI-Powered Development
+Kryptonide supports two distinct AI workflows:
+
+#### 1. Local On-Device AI
+- **GGUF Model Catalog:** Built-in model library with background download and storage management.
+- **Local Model Installation:** Support for custom GGUF model files and Hugging Face repositories.
+- **Native Inference Engine:** Local inference runner backed by a `llama-server` interface (`libllama_server.so`).
+- **Needle Agent Tooling:** Structured tool dispatch and deterministic execution for workspace tasks.
 
 > [!IMPORTANT]
-> **Continuous Support & Patch Roadmap:**
-> More patch updates will come. If you find issues, send it from the issues tab, and we will fix that.
+> The current local inference path checks for ARM64 support; availability depends on device architecture and runtime compatibility.
+
+#### 2. Cloud AI
+- **Bring-Your-Own-Key (BYOK):** Direct API connectivity to leading AI providers:
+  - Google Gemini
+  - OpenAI
+  - Anthropic Claude
+  - DeepSeek
+  - Moonshot (Kimi)
+  - Groq
+- **Flexible Model Selection:** Automatic provider model listings with manual model ID configuration fallback.
+
+#### 3. Agent System
+The agent layer provides workspace-oriented tools for supported operations:
+- File and project operations (read, write, search, patch).
+- Terminal execution tasks.
+- GitHub workflows.
+- Tool dispatch and structured argument validation.
+- Agent Skills and Model Context Protocol (MCP) configuration.
+
+### 🐙 Git and GitHub
+- **Native Git Operations:** Core version control powered by JGit.
+- **Authentication:** GitHub account sign-in and token authentication.
+- **Repository Management:** Repository browsing, cloning, and project linking.
+- **CI/CD Visibility:** GitHub Actions workflow status and run tracking.
+- **Build-Log Inspection:** Real-time log streaming with failed step expansion.
+- **Issue Tracking:** In-app GitHub issue browsing, searching, and submission.
+
+### 💻 Built-in Terminal
+Kryptonide includes a built-in shell for common development and project operations:
+- File and directory management.
+- Git version control commands.
+- Text processing and searching (`grep`, `find`, `cat`, etc.).
+- Archive and compression management (`tar`, `zip`, `unzip`).
+- Network utilities (`ping`, `curl`, `netstat`).
+- System diagnostics and environment inspection.
+- Integration with external Android shell environments.
+
+> [!NOTE]
+> The built-in shell is an Android development shell, not a complete desktop Linux distribution. Commands such as Node.js, Python, package managers, and other toolchains may require compatible tools to be installed in the selected shell environment.
+
+### 🌐 Web Preview and Krypton Beam
+- **In-App Web Preview:** Embedded rendering engine for HTML, CSS, and JavaScript projects.
+- **Developer Diagnostics:** Live preview console and error inspection.
+- **Krypton Beam:** Optional local-network preview server allowing project previews to be viewed on another browser on the same Wi-Fi network.
+
+> [!TIP]
+> Use Beam on trusted networks and share its local address only with individuals you intend to grant access to.
+
+### 🔍 Language Intelligence (LSP)
+Kryptonide includes a Language Server Protocol (LSP) client and server registry:
+
+| Language | Configured Server |
+| :--- | :--- |
+| **Kotlin** | Kotlin Language Server |
+| **TypeScript / JavaScript** | TypeScript Language Server |
+| **Python** | Pyright |
+| **JSON** | JSON Language Server |
+| **Rust** | rust-analyzer |
+| **Go** | gopls |
+
+*Actual language support depends on the corresponding server and runtime being installed and runnable on the device.*
+
+### 🧩 Extensibility & Workspace Backups
+- **Customization:** Plugin management, custom color themes, and personalized keymaps.
+- **Code Hygiene:** Formatter and linter registries (Prettier, Clang-Format, Ktlint).
+- **Extensible Workflows:** Agent Skills and MCP tool configurations.
+- **Google Drive Backup:** Workspace backup and restore integration via Google Drive.
 
 ---
 
-## 🌟 Executive Overview
-
-**KryptonIDE** transforms your Android mobile device into a high-performance workstation for professional software development. Built from the ground up natively in Kotlin and Jetpack Compose, KryptonIDE bypasses web-view compromises to deliver **desktop-grade editing speed**, **100% on-device local AI assistance**, **native GitHub integration with live CI/CD tracking**, and **hardware-accelerated 120Hz touch responsiveness**.
-
-Whether building full-stack web applications, debugging complex codebases, reviewing visual Git diffs, or engineering software completely offline during travel, KryptonIDE offers an uncompromising developer experience in the palm of your hand.
-
----
-
-## ✨ Key Capabilities & Highlights
-
-### ⚡ 1. Native Hardware-Accelerated Editor Surface
-- **Sora Native Editor Core**: Direct Android Canvas drawing without WebView latency or layout drift.
-- **Monospace Typography**: Bundled with JetBrains Mono, Fira Code, and customizable font support with zero font measurement desynchronization.
-- **Developer Ergonomics**:
-  - Precision caret navigation and touch-selection teardrops.
-  - Quick-Symbol shortcut bar with customizable brackets, quotes, and punctuation.
-  - Bracket matching, multi-level code folding, and indentation guides.
-  - Emmet abbreviation expansion for lightning-fast HTML/CSS generation.
-  - Floating command palette for instant keyboard-free action execution.
-
-### 🧠 2. Pocket Server & 100% On-Device AI
-- **MiniCPM 1B Unified Base Brain**: Pre-configured on-device GGUF engine running directly in RAM via native `libllama_server.so` (C++). Zero cloud tokens needed and zero lines of code leave your device.
-- **Claude Opus Distilled Reasoning**: Capable of deep internal reflection (`<think>`), structured multi-file planning (`<plan>`), and surgical code modification (`<edit>`) with zero placeholders.
-- **Curated Model Catalog**: Categorized library of on-device models with dynamic RAM safety checks and OOM risk detection:
-  - *Default Core Engine*: MiniCPM 1B, MiniCPM 2.4B
-  - *Code Intelligence & Agents*: Qwen 2.5 Coder 1.5B, Qwen 2.5 Coder 0.5B, DeepSeek R1 Distill
-  - *General Reasoning*: SmolLM2 1.7B, Gemma 2 2B
-  - *Semantic Embeddings*: BGE Micro, MiniLM
-- **Custom Hugging Face Downloader**: Built-in parser for any Hugging Face repo ID or direct `.gguf` link, featuring real-time size computation, memory risk evaluation, and background resume/pause/stop downloading.
-- **Cloud BYOK Multi-Provider Cascade**: Seamless fallback to cloud intelligence (Anthropic Claude 3.5 Sonnet, OpenAI GPT-4o, Groq, Google Gemini) via Bring-Your-Own-Key.
-
-### 🐙 3. GitHub Hub, Visual Diffs & Actions Tracker
-- **Visual File Diffs**: Interactive in-app side-by-side and unified diff viewer highlighting exact additions, modifications, and deletions with line numbers.
-- **Persistent GitHub Actions Tracker**: Real-time polling and visualization of workflow runs (`build`, `test`, `deploy`) with instant failure detection.
-- **Live Step Logs**: Inspect raw execution logs directly on your phone with automatic failed-step expansion.
-- **Send-to-AI Diagnostics**: One-tap handoff from failed CI/CD workflow logs directly to the AI Assistant for instant diagnosis and automated code fixes.
-- **Branch Management**: Switch branches, commit with customizable messages, and push directly to remote repositories.
-- **In-App Issue Tracker**: Browse and submit project issues without leaving your development workspace.
-
-### 🌐 4. Live Render & Beam Mirroring
-- **Real-Time Preview**: Built-in rendering engine for HTML5, CSS3, and JavaScript web projects.
-- **Console & Diagnostics**: Live DOM console log inspection and syntax error extraction.
-- **Krypton Beam**: Mirror and test your live project in real time across any browser on your local network.
-
-### 💻 5. Integrated Linux Terminal & Workspaces
-- **Local Shell**: Built-in terminal session for executing build commands, running node/python scripts, and managing project environments.
-- **Deep File Explorer**: Intuitive gesture-driven file tree with multi-file creation, folder nesting, and drag-and-drop operations.
-- **Project Starters**: Instant templating for Web (Vanilla, React, Vue), Node.js, Python, and Kotlin.
-
-### 🧩 6. Extensible Customization & Plugins
-- Built-in Plugin Manager supporting Language Server Protocol (LSP), automated code formatters (Prettier, Clang-Format), linters (ESLint, Ktlint), keymaps, and high-contrast color themes.
-
----
-
-## 🏗️ Technical Architecture
+## Architecture
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        KryptonIDE User Experience                      │
-├────────────────────────────────────────────────────────────────────────┤
-│  120Hz Jetpack Compose UI  │  Sora Hardware Canvas  │  Live Web View   │
-├────────────────────────────┴────────────────────────┴──────────────────┤
-│                  Core IDE Logic & ViewModel Layer (Kotlin)             │
-│  - EditorViewModel          - GitViewModel          - AiViewModel      │
-│  - PluginManager            - SettingsStore         - BeamServer       │
-├────────────────────────────────────────────────────────────────────────┤
-│                       Autonomous Agent & AI Subsystem                  │
-│  - NeedleAgentCoordinator   - MiniCpmToolParser     - RepetitionGuard  │
-│  - PocketModels Catalog     - HuggingFace Downloader- CheckpointManager│
-├────────────────────────────────────────────────────────────────────────┤
-│                     Native Performance Engines (C/C++)                 │
-│  - libllama_server.so (FP16 KV Cache, GGUF Engine)                     │
-│  - liboorty_engine.so (sched_setaffinity Prime-Core Pinning)           │
-└────────────────────────────────────────────────────────────────────────┘
+Kryptonide
+├── Presentation
+│   ├── Jetpack Compose UI
+│   ├── Sora Editor host
+│   ├── Project dashboard
+│   └── File explorer
+├── IDE Core
+│   ├── Editor and project ViewModels
+│   ├── Project repository and storage
+│   ├── Git / GitHub integration
+│   ├── Terminal and build tooling
+│   └── Preview and Krypton Beam
+├── AI and Agent Layer
+│   ├── Local GGUF model management
+│   ├── Local inference runner
+│   ├── Cloud provider connections
+│   ├── Needle agent and tool dispatch
+│   └── Skills and MCP configuration
+└── Native Components
+    ├── C++ Oorty engine
+    └── Android platform APIs
 ```
 
 ---
 
-## 🚀 Getting Started (Building from Source)
+## Tech Stack
 
-### System Requirements
-- **Host OS**: Linux, macOS, or Windows 11
-- **IDE**: Android Studio Ladybug (2024.2.1+) or newer
-- **Android SDK**: API Level 35 (compileSdk 35, minSdk 26)
-- **JDK**: OpenJDK 17 or higher
-- **Android NDK**: Version 26+ with CMake 3.22+
-
-### Quick Setup
-
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/Sednium-Technologies/kryptonide-native.git
-   cd kryptonide-native
-   ```
-
-2. **Open in Android Studio**
-   Open the root directory in Android Studio. Gradle will automatically sync project dependencies.
-
-3. **Run Unit Tests**
-   ```bash
-   ./gradlew testDebugUnitTest
-   ```
-
-4. **Assemble Release APK**
-   ```bash
-   ./gradlew assembleRelease
-   ```
-   The optimized APK will be generated at:
-   `app/build/outputs/apk/release/app-release.apk`
+| Technology | Purpose |
+| :--- | :--- |
+| **Kotlin** | Primary application language |
+| **Jetpack Compose** | Declarative native Android UI |
+| **Sora Editor** | High-performance native code editing engine |
+| **C++ / C++17** | Native performance components (`libllama_server.so`, `liboorty_engine.so`) |
+| **CMake** | Native C++ build configuration |
+| **JGit** | Pure Java Git implementation |
+| **OkHttp** | Resilient networking and streaming |
+| **Kotlin Coroutines** | Asynchronous operations and structured concurrency |
+| **Room / Android Storage APIs** | Application data persistence and project storage |
+| **Gradle** | Build system and automation |
 
 ---
 
-## 💬 Community, Support & Feedback
+## System Requirements
 
-We are committed to delivering the most reliable mobile coding experience. 
-
-- **Found a bug or have a suggestion?** Please open an issue via our [GitHub Issues](https://github.com/Sednium-Technologies/kryptonide-native/issues) tab.
-- **Direct in-app reporting:** You can also view and submit issues directly within KryptonIDE under the GitHub tab.
-- We actively triage user feedback and release continuous patch updates.
+| Component | Version / Requirement |
+| :--- | :--- |
+| **Host OS** | Linux, macOS, or Windows |
+| **JDK** | OpenJDK 17 |
+| **Android SDK** | Platform 37 (compileSdk 37, targetSdk 37) |
+| **Android NDK** | 25.2.9519653 |
+| **CMake** | 3.22.1 |
+| **Gradle Wrapper** | 9.8.2 |
+| **Minimum Android OS** | Android 8.0 (API 26) |
 
 ---
 
-## 📄 License
+## Building from Source
 
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for full legal terms.
+### 1. Clone the Repository
+```bash
+git clone https://github.com/Sednium-Technologies/kryptonide-native.git
+cd kryptonide-native
+```
+
+### 2. Configure Local Secrets (Optional)
+The repository includes `.env.example` as a template for optional integration values:
+```bash
+cp .env.example .env
+```
+Replace placeholders with your own values when required. Never commit API keys, OAuth credentials, signing files, or passwords to version control. Cloud AI providers can also be configured directly through the in-app BYOK settings.
+
+### 3. Open in Android Studio
+Open the repository root in Android Studio Ladybug (2024.2.1+) or newer and allow Gradle to sync. Install the required SDK, NDK, and CMake versions if prompted.
+
+### 4. Build a Debug APK
+```bash
+./gradlew assembleDebug
+```
+Output: `app/build/outputs/apk/debug/app-debug.apk`
+
+### 5. Run Tests and Lint
+```bash
+./gradlew testDebugUnitTest
+./gradlew lintDebug
+```
+To force tests to re-execute from scratch:
+```bash
+./gradlew testDebugUnitTest --rerun-tasks
+```
+
+### 6. Build a Signed Release APK
+Release signing is configured via `local.properties`:
+```properties
+SIGNING_STORE_FILE=/absolute/path/to/your-release-key.p12
+SIGNING_STORE_PASSWORD=your-keystore-password
+SIGNING_KEY_ALIAS=your-key-alias
+SIGNING_KEY_PASSWORD=your-key-password
+```
+Run:
+```bash
+./gradlew assembleRelease
+```
+Output: `app/build/outputs/apk/release/app-release.apk`
+
+---
+
+## Repository Structure
 
 ```
-Copyright (c) 2026 Sednium Technologies
+.
+├── app/
+│   └── src/
+│       ├── main/
+│       │   ├── cpp/               # Native C++ engines and CMake configurations
+│       │   ├── java/              # Kotlin application source code
+│       │   ├── assets/            # Fonts, templates, and textmate grammars
+│       │   └── AndroidManifest.xml
+│       └── test/                  # Unit and Robolectric tests
+├── docs/                          # Architecture specifications and documentation
+├── gradle/                        # Gradle wrapper and version catalog
+├── .env.example                   # Environment configuration template
+├── build.gradle.kts               # Root build script
+├── settings.gradle.kts            # Project settings and plugin repositories
+└── README.md
+```
+
+---
+
+## Troubleshooting
+
+| Problem | What to Check |
+| :--- | :--- |
+| **Gradle sync fails** | Verify JDK 17, Android SDK Platform 37, NDK 25.2.9519653, and CMake 3.22.1 installation. |
+| **Release signing fails** | Check `SIGNING_STORE_FILE` path and credentials inside `local.properties`. |
+| **Local model unavailable** | Check device ABI (ARM64 required), model download completion, available RAM, and runtime compatibility. |
+| **Terminal command missing** | Ensure required binary or utility is installed in the selected shell environment. |
+| **LSP server unavailable** | Check that the language server executable and its runtime dependencies are installed and runnable. |
+| **GitHub operation fails** | Verify personal access token validity, network connectivity, and repository access permissions. |
+
+When reporting an issue, please include your Android version, device model and architecture, reproduction steps, expected behavior, actual behavior, and relevant logs. Ensure all personal tokens and private project data are removed before sharing logs.
+
+---
+
+## Author
+
+**Loid aka Ankush Das**  
+Creator and developer of Kryptonide.  
+- 🌐 Website: [loid.sednium.com](https://loid.sednium.com)  
+- 🏢 Developed under **Sednium Technologies**.
+
+---
+
+## Support & Contributions
+
+- **Found a bug or have a suggestion?** Open an issue via our [GitHub Issues](https://github.com/Sednium-Technologies/kryptonide-native/issues) tracker.
+- **Browse the code:** [Sednium-Technologies/kryptonide-native](https://github.com/Sednium-Technologies/kryptonide-native)
+- Additional documentation is available in the `docs/` directory.
+
+Contributions, suggestions, and constructive feedback are warmly welcome.
+
+---
+
+## License
+
+Kryptonide is distributed under the **MIT License**. See the [LICENSE](LICENSE) file for complete details.
+
+```
+Copyright (c) 2026 Ankush Das.
 ```

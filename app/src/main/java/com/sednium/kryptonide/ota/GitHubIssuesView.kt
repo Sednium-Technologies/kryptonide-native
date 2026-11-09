@@ -180,7 +180,7 @@ fun GitHubIssuesView(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "Found a bug or have a feature request for KryptonIDE v4.0? Tap '+ Raise Issue' above to submit one directly.",
+                            text = "Found a bug or have a feature request for KryptonIDE v1.0? Tap '+ Raise Issue' above to submit one directly.",
                             color = colors.Muted,
                             fontSize = 12.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,

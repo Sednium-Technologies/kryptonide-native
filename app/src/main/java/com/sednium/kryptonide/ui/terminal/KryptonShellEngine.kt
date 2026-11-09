@@ -3293,7 +3293,7 @@ ${ANSI_CYAN}       / /\ \        ${ANSI_GRAY}-----------------------${ANSI_RESET
 ${ANSI_CYAN}     / / /\ \ \      ${ANSI_BOLD}Host:${ANSI_RESET} ${Build.MANUFACTURER} ${Build.MODEL}
     / / /  \ \ \     ${ANSI_BOLD}Kernel:${ANSI_RESET} Linux ${System.getProperty("os.version")}
 ${ANSI_CYAN}   /_/_/    \_\_\    ${ANSI_BOLD}Uptime:${ANSI_RESET} $uptimeStr
-                     ${ANSI_BOLD}Shell:${ANSI_RESET} Kryptonide Native POSIX Shell v4.0
+                     ${ANSI_BOLD}Shell:${ANSI_RESET} Kryptonide Native POSIX Shell v1.0
                      ${ANSI_BOLD}CPU Arch:${ANSI_RESET} $abi
                      ${ANSI_BOLD}JVM Memory:${ANSI_RESET} ${usedMb}MB / ${totalMb}MB
                      ${ANSI_BOLD}Java:${ANSI_RESET} ${System.getProperty("java.vm.name")}

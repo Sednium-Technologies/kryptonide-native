@@ -7,6 +7,10 @@ class OtaUpdateManagerTest {
 
     @Test
     fun testParseVersionParts() {
+        assertEquals(Triple(1, 0, 0), OtaUpdateManager.parseVersionParts("1.0"))
+        assertEquals(Triple(1, 0, 0), OtaUpdateManager.parseVersionParts("v1.0"))
+        assertEquals(Triple(1, 0, 0), OtaUpdateManager.parseVersionParts("V1.0.0"))
+        assertEquals(Triple(1, 0, 1), OtaUpdateManager.parseVersionParts("v1.0.1"))
         assertEquals(Triple(4, 0, 0), OtaUpdateManager.parseVersionParts("4.0"))
         assertEquals(Triple(4, 0, 0), OtaUpdateManager.parseVersionParts("v4.0"))
         assertEquals(Triple(4, 0, 0), OtaUpdateManager.parseVersionParts("V4.0.0"))
@@ -19,34 +23,32 @@ class OtaUpdateManagerTest {
 
     @Test
     fun testIsNewerVersion() {
-        val current = "4.0"
+        val current = "1.0"
 
         // Same version (should be false - avoid self-update loop)
-        assertFalse(OtaUpdateManager.isNewerVersion(current, "4.0"))
-        assertFalse(OtaUpdateManager.isNewerVersion(current, "v4.0"))
-        assertFalse(OtaUpdateManager.isNewerVersion(current, "v4.0.0"))
-        assertFalse(OtaUpdateManager.isNewerVersion(current, "v4.0.0-release"))
-        assertFalse(OtaUpdateManager.isNewerVersion(current, "release-4.0.0"))
+        assertFalse(OtaUpdateManager.isNewerVersion(current, "1.0"))
+        assertFalse(OtaUpdateManager.isNewerVersion(current, "v1.0"))
+        assertFalse(OtaUpdateManager.isNewerVersion(current, "v1.0.0"))
+        assertFalse(OtaUpdateManager.isNewerVersion(current, "v1.0.0-release"))
+        assertFalse(OtaUpdateManager.isNewerVersion(current, "release-1.0.0"))
 
         // Older version (should be false)
-        assertFalse(OtaUpdateManager.isNewerVersion(current, "3.9"))
-        assertFalse(OtaUpdateManager.isNewerVersion(current, "v3.9.9"))
-        assertFalse(OtaUpdateManager.isNewerVersion(current, "v1.0.0"))
+        assertFalse(OtaUpdateManager.isNewerVersion(current, "0.9"))
+        assertFalse(OtaUpdateManager.isNewerVersion(current, "v0.9.9"))
 
         // Newer patch version (should be true)
-        assertTrue(OtaUpdateManager.isNewerVersion(current, "v4.0.1"))
-        assertTrue(OtaUpdateManager.isNewerVersion(current, "4.0.2"))
-        assertTrue(OtaUpdateManager.isNewerVersion(current, "release-4.0.1"))
+        assertTrue(OtaUpdateManager.isNewerVersion(current, "v1.0.1"))
+        assertTrue(OtaUpdateManager.isNewerVersion(current, "1.0.2"))
+        assertTrue(OtaUpdateManager.isNewerVersion(current, "release-1.0.1"))
 
         // Newer minor version (should be true)
-        assertTrue(OtaUpdateManager.isNewerVersion(current, "v4.1"))
-        assertTrue(OtaUpdateManager.isNewerVersion(current, "4.1.0"))
-        assertTrue(OtaUpdateManager.isNewerVersion(current, "v4.2.1"))
+        assertTrue(OtaUpdateManager.isNewerVersion(current, "v1.1"))
+        assertTrue(OtaUpdateManager.isNewerVersion(current, "1.1.0"))
+        assertTrue(OtaUpdateManager.isNewerVersion(current, "v1.2.1"))
 
         // Newer major version (should be true)
-        assertTrue(OtaUpdateManager.isNewerVersion(current, "v5.0"))
-        assertTrue(OtaUpdateManager.isNewerVersion(current, "v5.0.0"))
-        assertTrue(OtaUpdateManager.isNewerVersion(current, "v5.0-beta"))
+        assertTrue(OtaUpdateManager.isNewerVersion(current, "v2.0"))
+        assertTrue(OtaUpdateManager.isNewerVersion(current, "v4.0.0"))
         assertTrue(OtaUpdateManager.isNewerVersion(current, "10.0.0"))
 
         // Comparison from patch base
@@ -71,6 +73,7 @@ class OtaUpdateManagerTest {
 
     @Test
     fun testRepoUrlMatchesSpecification() {
+        assertEquals("1.0", OtaUpdateManager.DEFAULT_BASE_VERSION)
         assertEquals("Sednium-Technologies", OtaUpdateManager.REPO_OWNER)
         assertEquals("kryptonide-native", OtaUpdateManager.REPO_NAME)
         assertEquals("https://github.com/Sednium-Technologies/kryptonide-native", OtaUpdateManager.GITHUB_REPO_URL)

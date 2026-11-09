@@ -44,7 +44,7 @@ class WebSearchToolSet(
             val url = "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=$encoded&format=json&utf8=1&srlimit=4"
             val req = Request.Builder()
                 .url(url)
-                .header("User-Agent", "Kryptonide-Android/4.0 (Autonomous Tool Coprocessor)")
+                .header("User-Agent", "Kryptonide-Android/1.0 (Autonomous Tool Coprocessor)")
                 .build()
 
             val resp = client.newCall(req).execute()
