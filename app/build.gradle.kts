@@ -30,8 +30,8 @@ android {
     minSdk = 26
     targetSdk = 37
     multiDexEnabled = true
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 2
+    versionName = "1.1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

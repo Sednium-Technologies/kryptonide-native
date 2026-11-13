@@ -243,9 +243,11 @@ fun EditorScreen(
         SoraEditorHost(
             context = context,
             scope   = scope,
-            onContentChanged = { content ->
+            onContentChanged = { _ ->
                 val currentId = editorVm.state.value.activeFileId
-                if (currentId != null) editorVm.updateContent(currentId, content)
+                if (currentId != null) {
+                    editorVm.markUnsaved(currentId)
+                }
             },
             onSaveTriggered = { content ->
                 val id = editorVm.state.value.activeFileId
@@ -500,8 +502,13 @@ fun EditorScreen(
                 activeTab = "github"
             }
             "run" -> {
+                val currentId = editorVm.state.value.activeFileId
+                if (currentId != null && fileMap[currentId]?.isUnsaved == true) {
+                    editorVm.updateContent(currentId, soraHost.getContent())
+                    editorVm.saveFileToDisk(currentId)
+                }
                 activeTab = "run"
-                renderEngine.run(effectiveTemplate, projectName, filesList, activeFileName)
+                renderEngine.run(effectiveTemplate, projectName, editorVm.state.value.files.values.toList(), activeFileName)
             }
             else -> activeTab = tab
         }

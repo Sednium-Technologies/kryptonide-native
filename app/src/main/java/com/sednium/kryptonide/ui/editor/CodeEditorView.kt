@@ -87,8 +87,9 @@ fun CodeEditorView(
                 editor.setTextColor(fgColor)
                 editor.setBackgroundColor(bgColor)
                 val current = editor.text.toString()
-                if (current != (file.content ?: "")) {
-                    editor.setText(file.content ?: "")
+                val target = file.content ?: ""
+                if (!editor.hasFocus() && current != target) {
+                    editor.setText(target)
                 }
             },
         )

@@ -306,7 +306,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val currentFile = _state.value.files[fileId] ?: return
         // Binary and non-text files have null content; never save empty string over them!
         if (currentFile.content == null) return
-        val contentToSave = currentFile.content
+        if (fileId == _state.value.activeFileId && soraHost != null) {
+            val live = soraHost?.getContent()
+            if (live != null && live != currentFile.content) {
+                updateContent(fileId, live)
+            }
+        }
+        val targetFile = _state.value.files[fileId] ?: currentFile
+        val contentToSave = targetFile.content ?: return
         val targetRevision = documentRevisions[fileId] ?: 0L
         saveSnapshotToDisk(fileId, contentToSave, targetRevision)
     }
@@ -402,6 +409,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         documentRevisions.compute(fileId) { _, rev -> (rev ?: 0L) + 1L }
         val files = _state.value.files.toMutableMap()
         files[fileId] = files[fileId]?.copy(content = content, isUnsaved = true) ?: return
+        _state.value = _state.value.copy(files = files)
+    }
+
+    fun markUnsaved(fileId: String) {
+        val currentFile = _state.value.files[fileId] ?: return
+        if (currentFile.isUnsaved == true) return
+        val files = _state.value.files.toMutableMap()
+        files[fileId] = currentFile.copy(isUnsaved = true)
         _state.value = _state.value.copy(files = files)
     }
 

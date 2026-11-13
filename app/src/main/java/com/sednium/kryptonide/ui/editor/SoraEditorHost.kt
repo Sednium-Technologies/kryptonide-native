@@ -67,6 +67,17 @@ class SoraEditorHost(
     private var isAutoClosingTag = false
     var isInternalEdit: Boolean = false
         private set
+    var lastUserEditTimeMs: Long = 0L
+        private set
+    var currentFilename: String = ""
+        private set
+
+    fun isUserTyping(): Boolean {
+        if (isInternalEdit) return true
+        if (System.currentTimeMillis() - lastUserEditTimeMs < 1000L) return true
+        if (::editor.isInitialized && editor.hasComposingText()) return true
+        return false
+    }
 
     var keymapPreset: String = KeymapManager.PRESET_VSCODE
     var onSaveShortcut: (() -> Unit)? = null
@@ -107,10 +118,10 @@ class SoraEditorHost(
             setHighlightCurrentBlock(true)
             setBlockLineWidth(1.5f)
             props.cancelCompletionNs = 0L
-            props.autoCompletionOnComposing = false
-            props.disallowSuggestions = true
-            props.trackComposingTextOnCommit = false
-            props.minimizeComposingTextUpdate = false
+            props.autoCompletionOnComposing = true
+            props.disallowSuggestions = false
+            props.trackComposingTextOnCommit = true
+            props.minimizeComposingTextUpdate = true
             props.cacheRenderNodeForLongLines = false
 
             // Sleek, slim modern scrollbars
@@ -147,6 +158,7 @@ class SoraEditorHost(
 
             subscribeEvent(ContentChangeEvent::class.java) { event, _ ->
                 if (isLoadingFile) return@subscribeEvent
+                lastUserEditTimeMs = System.currentTimeMillis()
                 val content = text.toString()
                 isInternalEdit = true
                 try {
@@ -398,6 +410,26 @@ class SoraEditorHost(
         currentLanguageId = resolvedLang
         saveDebounceJob?.cancel()
         val normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+
+        val isSameFile = (filename.isNotBlank() && filename == currentFilename)
+        currentFilename = filename
+
+        // 1. If content is already identical to the editor buffer, do NOT call editor.setText()!
+        // Calling editor.setText() calls inputMethodManager.restartInput(), resetting IME composing
+        // state and causing character duplication and multi-char backspace wiping.
+        if (::editor.isInitialized && editor.text.toString() == normalized) {
+            runCatching { setLanguage(resolvedLang) }
+            onFileLoaded(resolvedLang, filename)
+            return
+        }
+
+        // 2. If this is the currently open file and the user is typing or composing text,
+        // do not let external loadFile clobber the live editor buffer.
+        if (isSameFile && ::editor.isInitialized && isUserTyping()) {
+            android.util.Log.d("SoraEditorHost", "Skipping applyLoad for $filename: user typing in progress")
+            return
+        }
+
         isLoadingFile = true
         try {
             runCatching {
@@ -764,6 +796,10 @@ class SoraEditorHost(
         if (!::editor.isInitialized) return
         val normalized = newContent.replace("\r\n", "\n").replace("\r", "\n")
         if (normalized == editor.text.toString()) return
+        if (isUserTyping()) {
+            android.util.Log.d("SoraEditorHost", "Skipping setContent: user typing or composing in progress")
+            return
+        }
         isLoadingFile = true
         try {
             editor.setText(normalized)
